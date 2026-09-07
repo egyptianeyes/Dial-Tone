@@ -476,10 +476,10 @@ public:
 		StringCchCopy(lf.lfFaceName, LF_FACESIZE, _T("Consolas"));
 		logFont.CreateFontIndirect(&lf);
 
-		traceMode.Create(Translate(_T("Call Trace")), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | BS_PUSHLIKE,
-			CRect(0, 0, 0, 0), this, IDC_CALL_TRACE_MODE);
 		notesMode.Create(Translate(_T("Call Notes")), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | BS_PUSHLIKE,
 			CRect(0, 0, 0, 0), this, IDC_CALL_NOTES_MODE);
+		traceMode.Create(Translate(_T("Call Trace")), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | BS_PUSHLIKE,
+			CRect(0, 0, 0, 0), this, IDC_CALL_TRACE_MODE);
 		spkClock.Create(_T("Spk Clock"), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
 			CRect(0, 0, 0, 0), this, IDC_DIALER_SPK_CLOCK);
 		echoTest.Create(_T("Echo Test"), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -505,15 +505,15 @@ public:
 		copy.SetFont(parent->GetFont());
 		undo.SetFont(parent->GetFont());
 		clear.SetFont(parent->GetFont());
-		log.Create(WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | ES_MULTILINE | ES_READONLY
+		log.Create(WS_CHILD | WS_VSCROLL | WS_TABSTOP | ES_MULTILINE | ES_READONLY
 			| ES_AUTOVSCROLL | ES_LEFT, CRect(0, 0, 0, 0), this, IDC_CALL_TRACE_LOG);
 		log.SetFont(&logFont);
-		notes.Create(WS_CHILD | WS_VSCROLL | WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL | ES_LEFT,
+		notes.Create(WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL | ES_LEFT,
 			CRect(0, 0, 0, 0), this, IDC_CALL_NOTES_EDIT);
 		notes.SetFont(&logFont);
 		notes.SetPlaceholder(Translate(_T("Start typing...")));
-		traceMode.SetCheck(BST_CHECKED);
-		mode = 0;
+		notesMode.SetCheck(BST_CHECKED);
+		mode = 1;
 		viewingCurrent = true;
 		SetDarkMode(accountSettings.darkMode);
 		Reset();
@@ -790,8 +790,8 @@ public:
 		int fourButtonWidth = max(0, (rowWidth - pad * 3) / 4);
 		int fourButtonRowWidth = fourButtonWidth * 4 + pad * 3;
 		int fourButtonLeft = pad + max(0, (rowWidth - fourButtonRowWidth) / 2);
-		traceMode.SetWindowPos(NULL, fourButtonLeft, pad, fourButtonWidth, headerHeight, SWP_NOACTIVATE | SWP_NOZORDER);
-		notesMode.SetWindowPos(NULL, fourButtonLeft + fourButtonWidth + pad, pad, fourButtonWidth, headerHeight, SWP_NOACTIVATE | SWP_NOZORDER);
+		notesMode.SetWindowPos(NULL, fourButtonLeft, pad, fourButtonWidth, headerHeight, SWP_NOACTIVATE | SWP_NOZORDER);
+		traceMode.SetWindowPos(NULL, fourButtonLeft + fourButtonWidth + pad, pad, fourButtonWidth, headerHeight, SWP_NOACTIVATE | SWP_NOZORDER);
 		spkClock.SetWindowPos(NULL, fourButtonLeft + (fourButtonWidth + pad) * 2, pad, fourButtonWidth, headerHeight, SWP_NOACTIVATE | SWP_NOZORDER);
 		echoTest.SetWindowPos(NULL, fourButtonLeft + (fourButtonWidth + pad) * 3, pad, fourButtonWidth, headerHeight, SWP_NOACTIVATE | SWP_NOZORDER);
 		int recentTop = pad * 2 + headerHeight;
@@ -6892,6 +6892,9 @@ void CmainDlg::OnShowWindow(BOOL bShow, UINT nStatus)
 	}
 	else if (m_docked && !m_appBarRegistered) {
 		AppBarUpdateDock(false);
+	}
+	if (bShow) {
+		RedrawCaptionMinimize();
 	}
 }
 
