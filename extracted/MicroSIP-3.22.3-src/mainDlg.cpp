@@ -3412,9 +3412,6 @@ BOOL CmainDlg::OnInitDialog()
 	LONG_PTR finalStyle = ::GetWindowLongPtr(m_hWnd, GWL_STYLE);
 	LONG_PTR finalExStyle = ::GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
 	ASSERT((finalStyle & (WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME)) == 0);
-	PJ_LOG(3, (THIS_FILENAME, "Main caption runtime styles: style=0x%p exstyle=0x%p min=%d max=%d thick=%d",
-		(void*)finalStyle, (void*)finalExStyle, (finalStyle & WS_MINIMIZEBOX) != 0,
-		(finalStyle & WS_MAXIMIZEBOX) != 0, (finalStyle & WS_THICKFRAME) != 0));
 	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
 	Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
 
