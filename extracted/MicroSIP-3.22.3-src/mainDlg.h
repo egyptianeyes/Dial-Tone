@@ -97,6 +97,8 @@ public:
 	bool missed;
 	bool m_snappingMainWindow;
 	int m_lockedWindowWidth;
+	int m_phoneBaseWindowWidth;
+	int m_phoneWindowWidth;
 	bool m_appBarRegistered;
 	bool m_docked;
 	UINT m_appBarEdge;
@@ -180,6 +182,8 @@ public:
 	void AppBarUpdateDock(bool allowDockChange);
 	void AppBarRemove();
 	void AppBarApplyPosition();
+	int MainWindowWidthForList(CWnd* page, UINT listId) const;
+	void ApplyMainViewWidth(int tabIndex);
 	void LayoutCallTracePanel();
 	void BeginDialToneReadiness();
 	void SetDialToneSessionActive(bool active);

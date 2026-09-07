@@ -588,6 +588,7 @@ public:
 		metadata.started = CTime::GetCurrentTime();
 		metadata.finalDuration = -1;
 		metadata.active = true;
+		metadata.answered = false;
 		metadata.username = accountSettings.account.username;
 		metadata.sipCallId = CString(callInfo->call_id.ptr, callInfo->call_id.slen);
 		metadata.callerId = CallerFromUri(CString(callInfo->remote_info.ptr, callInfo->remote_info.slen));
@@ -609,7 +610,21 @@ public:
 		if (callInfo && callInfo->id == metadata.callId && metadata.active) {
 			metadata.finalDuration = max(0, (int)(CTime::GetCurrentTime() - metadata.started).GetTotalSeconds());
 			metadata.active = false;
+			if (metadata.answered) {
+				SaveCurrentNotesIfDirty();
+			}
 		}
+	}
+
+	void ShowTrace() { ShowMode(0); }
+
+	void ShowNotesForAnsweredCall(pjsua_call_info* callInfo)
+	{
+		if (!callInfo || callInfo->id != metadata.callId || !metadata.active || metadata.answered) {
+			return;
+		}
+		metadata.answered = true;
+		ShowMode(1);
 	}
 
 	void ShowMode(int newMode)
@@ -703,20 +718,22 @@ public:
 		UpdateActionStates();
 	}
 
-	void Save()
+	bool Save(bool currentNote = false)
 	{
 		CString notesToSave = currentNotes;
-		if (mode == 1 && viewingCurrent) {
+		int saveMode = currentNote ? 1 : mode;
+		bool saveCurrent = currentNote || viewingCurrent;
+		if (saveMode == 1 && mode == 1 && viewingCurrent) {
 			currentNotes = GetText(notes);
 			notesToSave = currentNotes;
 		}
-		else if (mode == 1 && !viewingCurrent) {
+		else if (saveMode == 1 && !currentNote && !viewingCurrent) {
 			notesToSave = GetText(notes);
 		}
 		CString folder = SaveFolder();
 		if (!EnsureFolder(folder)) {
 			AfxMessageBox(Translate(_T("Unable to create the Call Records folder.")), MB_ICONERROR);
-			return;
+			return false;
 		}
 		CString caller = SafeFilePart(metadata.callerId.IsEmpty() ? _T("Unknown") : metadata.callerId);
 		CString username = SafeFilePart(metadata.username.IsEmpty() ? _T("Unknown") : metadata.username);
@@ -725,27 +742,28 @@ public:
 		ULONGLONG saveTime = UnixMilliseconds();
 		CString fileName;
 		fileName.Format(_T("%s-%s-%dS-%s-%s-%I64u.txt"), caller, started.Format(_T("%Y-%m-%d-%H%M%S")), duration,
-			username, mode == 0 ? _T("Trace") : _T("Note"), saveTime);
+			username, saveMode == 0 ? _T("Trace") : _T("Note"), saveTime);
 		CString body;
 		body.Format(_T("Caller ID: %s\r\nStarted: %s\r\nDuration: %d\r\nUsername: %s\r\nSIP Call-ID: %s\r\n\r\n%s:\r\n%s\r\n"),
 			metadata.callerId, started.Format(_T("%Y-%m-%d %H:%M:%S")), duration, metadata.username, metadata.sipCallId,
-			mode == 0 ? _T("Trace") : _T("Notes"), mode == 0 ? currentTrace : notesToSave);
+			saveMode == 0 ? _T("Trace") : _T("Notes"), saveMode == 0 ? currentTrace : notesToSave);
 		CStdioFileEx file;
 		file.SetCodePage(CP_UTF8);
 		file.SetWriteBOM(true);
 		CFileException error;
 		if (!file.Open(folder + _T("\\") + fileName, CFile::modeCreate | CFile::modeWrite | CFile::typeText, &error)) {
 			AfxMessageBox(Translate(_T("Unable to save the call record.")), MB_ICONERROR);
-			return;
+			return false;
 		}
 		file.WriteString(body);
 		file.Close();
-		if (mode == 1 && viewingCurrent) {
+		if (saveMode == 1 && saveCurrent) {
 			savedCurrentNotes = currentNotes;
 		}
 		RefreshRecent();
 		ShowFeedback(FeedbackSave);
 		UpdateActionStates();
+		return true;
 	}
 
 	void SetDarkMode(bool enabled)
@@ -1058,6 +1076,7 @@ private:
 		CTime started;
 		int finalDuration = -1;
 		bool active = false;
+		bool answered = false;
 		CString callerId;
 		CString username;
 		CString sipCallId;
@@ -1132,11 +1151,29 @@ private:
 			bool previousCurrent = viewingCurrent;
 			mode = 1;
 			viewingCurrent = true;
-			Save();
+			bool saved = Save();
 			mode = previousMode;
 			viewingCurrent = previousCurrent;
+			if (!saved) return false;
 		}
 		return true;
+	}
+
+	bool SaveCurrentNotesIfDirty()
+	{
+		if (mode == 1 && viewingCurrent) {
+			currentNotes = GetText(notes);
+		}
+		CString meaningful = currentNotes;
+		meaningful.Trim();
+		if (currentNotes == savedCurrentNotes) {
+			return true;
+		}
+		if (meaningful.IsEmpty() && savedCurrentNotes.IsEmpty()) {
+			savedCurrentNotes = currentNotes;
+			return true;
+		}
+		return Save(true);
 	}
 
 	bool IsScrolledToBottom()
@@ -3255,6 +3292,8 @@ CmainDlg::CmainDlg(CWnd * pParent /*=NULL*/)
 	missed = false;
 	m_snappingMainWindow = false;
 	m_lockedWindowWidth = 0;
+	m_phoneBaseWindowWidth = 0;
+	m_phoneWindowWidth = 0;
 	m_appBarRegistered = false;
 	m_docked = false;
 	m_appBarEdge = ABE_LEFT;
@@ -3482,22 +3521,25 @@ BOOL CmainDlg::OnInitDialog()
 	GetClientRect(&clientRect);
 	CRect rect;
 	GetWindowRect(&rect);
+	int previousPhoneWindowWidth = accountSettings.mainW > 0 ? accountSettings.mainW : rect.Width();
+	int phoneWindowWidth = MulDiv(previousPhoneWindowWidth, 5, 4);
+	int viewWidthAdd = widthAdd + phoneWindowWidth - rect.Width();
 
 	int mx;
 	int my;
-	int mW = accountSettings.mainW > 0 ? accountSettings.mainW : rect.Width();
+	int mW = phoneWindowWidth;
 
 	int mH = accountSettings.mainH > 0 ? accountSettings.mainH : rect.Height();
 	CRect primaryScreenRect;
 	SystemParametersInfo(SPI_GETWORKAREA, 0, &primaryScreenRect, 0);
 	CRect savedRect(accountSettings.mainX, accountSettings.mainY,
-		accountSettings.mainX + mW + widthAdd, accountSettings.mainY + mH);
+		accountSettings.mainX + mW, accountSettings.mainY + mH);
 	// No saved coordinates is the first run; a saved rectangle on no current monitor is stale.
 	bool recoverToPrimary = (!accountSettings.mainX && !accountSettings.mainY)
 		|| MonitorFromRect(&savedRect, MONITOR_DEFAULTTONULL) == NULL;
 	if (recoverToPrimary) {
 		// Horizontally centred on the primary work area; height stays taskbar-aware below.
-		mx = primaryScreenRect.left + (primaryScreenRect.Width() - mW - widthAdd) / 2;
+		mx = primaryScreenRect.left + (primaryScreenRect.Width() - mW) / 2;
 		my = primaryScreenRect.Height() - mH;
 	}
 	else {
@@ -3547,6 +3589,10 @@ BOOL CmainDlg::OnInitDialog()
 	SnapMainWindowToWorkArea();
 	GetWindowRect(&rect);
 	m_lockedWindowWidth = rect.Width();
+	m_phoneBaseWindowWidth = previousPhoneWindowWidth;
+	m_phoneWindowWidth = rect.Width();
+	accountSettings.mainW = m_phoneBaseWindowWidth;
+	GetClientRect(&clientRect);
 
 	imageListStatus = new CImageList();
 	imageListStatus->Create(16, 16, ILC_COLOR32, 3, 3);
@@ -3588,13 +3634,13 @@ BOOL CmainDlg::OnInitDialog()
 
 	m_ButtonMenu.SetIcon(LoadImageIcon(IDI_DROPDOWN));
 
-	if (widthAdd) {
+	if (viewWidthAdd) {
 		CRect pageRect;
 		m_ButtonMenu.GetWindowRect(pageRect);
 		ScreenToClient(pageRect);
-		m_ButtonMenu.SetWindowPos(NULL, pageRect.left + widthAdd, pageRect.top, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
+		m_ButtonMenu.SetWindowPos(NULL, pageRect.left + viewWidthAdd, pageRect.top, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
 		//--
-		tabRect.right += widthAdd;
+		tabRect.right += viewWidthAdd;
 		tab->SetWindowPos(NULL, 0, 0, tabRect.Width(), tabRect.Height(), SWP_NOZORDER | SWP_NOMOVE);
 	}
 
@@ -3622,7 +3668,7 @@ BOOL CmainDlg::OnInitDialog()
 		tabItem.lParam = (LPARAM)pageCalls;
 		tab->InsertItem(99, &tabItem);
 		pageCalls->GetWindowRect(pageRect);
-		pageCalls->SetWindowPos(NULL, 0, offset, pageRect.Width() + widthAdd, pageRect.Height() + heightAdd, SWP_NOZORDER);
+		pageCalls->SetWindowPos(NULL, 0, offset, pageRect.Width() + viewWidthAdd, pageRect.Height() + heightAdd, SWP_NOZORDER);
 		AutoMove(pageCalls->m_hWnd, 0, 0, 100, 100);
 
 		pageContacts = new Contacts(this);
@@ -3632,7 +3678,7 @@ BOOL CmainDlg::OnInitDialog()
 		tabItem.lParam = (LPARAM)pageContacts;
 		tab->InsertItem(99, &tabItem);
 		pageContacts->GetWindowRect(pageRect);
-		pageContacts->SetWindowPos(NULL, 0, offset, pageRect.Width() + widthAdd, pageRect.Height() + heightAdd, SWP_NOZORDER);
+		pageContacts->SetWindowPos(NULL, 0, offset, pageRect.Width() + viewWidthAdd, pageRect.Height() + heightAdd, SWP_NOZORDER);
 		AutoMove(pageContacts->m_hWnd, 0, 0, 100, 100);
 
 	tab->SetCurSel(accountSettings.activeTab);
@@ -3949,6 +3995,9 @@ void CmainDlg::CallTraceOnCallState(pjsua_call_info* call_info)
 	}
 	line.Format(_T("State: %s"), CString(call_info->state_text.ptr, call_info->state_text.slen));
 	m_callTracePanel->Append(line);
+	if (call_info->state == PJSIP_INV_STATE_CONFIRMED) {
+		m_callTracePanel->ShowNotesForAnsweredCall(call_info);
+	}
 	if (call_info->state == PJSIP_INV_STATE_DISCONNECTED) {
 		line.Format(_T("SIP status: %d / %s"), call_info->last_status,
 			CString(call_info->last_status_text.ptr, call_info->last_status_text.slen));
@@ -5418,6 +5467,7 @@ void CmainDlg::OnTcnSelchangeTab(NMHDR * pNMHDR, LRESULT * pResult)
 	StopDialTone(_T("Dialler hidden · READY left and dial tone stopped"));
 	CTabCtrl* tab = (CTabCtrl*)GetDlgItem(IDC_MAIN_TAB);
 	int nTab = tab->GetCurSel();
+	ApplyMainViewWidth(nTab);
 	TC_ITEM tci;
 	tci.mask = TCIF_PARAM;
 	tab->GetItem(nTab, &tci);
@@ -6868,7 +6918,7 @@ void CmainDlg::OnSize(UINT type, int w, int h)
 	if (this->IsWindowVisible() && type == SIZE_RESTORED) {
 		CRect cRect;
 		GetWindowRect(&cRect);
-		accountSettings.mainW = cRect.Width();
+		accountSettings.mainW = m_phoneBaseWindowWidth ? m_phoneBaseWindowWidth : cRect.Width();
 		accountSettings.mainH = cRect.Height();
 		AccountSettingsPendingSave();
 	}
@@ -7104,6 +7154,75 @@ void CmainDlg::AppBarRemove()
 	m_appBarRegistered = false;
 }
 
+int CmainDlg::MainWindowWidthForList(CWnd* page, UINT listId) const
+{
+	if (!page || !::IsWindow(page->m_hWnd)) {
+		return m_phoneWindowWidth;
+	}
+	CListCtrl* list = (CListCtrl*)page->GetDlgItem(listId);
+	if (!list || !::IsWindow(list->m_hWnd)) {
+		return m_phoneWindowWidth;
+	}
+	CHeaderCtrl* header = list->GetHeaderCtrl();
+	int columnsWidth = 0;
+	int columns = header ? header->GetItemCount() : 0;
+	for (int column = 0; column < columns; ++column) {
+		columnsWidth += list->GetColumnWidth(column);
+	}
+	CRect listClient;
+	list->GetClientRect(&listClient);
+	int requiredListWidth = columnsWidth + GetSystemMetrics(SM_CXVSCROLL)
+		+ GetSystemMetrics(SM_CXEDGE) * 2;
+	CRect windowRect;
+	GetWindowRect(&windowRect);
+	return max(m_phoneWindowWidth,
+		windowRect.Width() + requiredListWidth - listClient.Width());
+}
+
+void CmainDlg::ApplyMainViewWidth(int tabIndex)
+{
+	int targetWidth = m_phoneWindowWidth;
+	if (tabIndex == 1) {
+		targetWidth = MainWindowWidthForList(pageCalls, IDC_CALLS);
+	}
+	else if (tabIndex == 2) {
+		targetWidth = MainWindowWidthForList(pageContacts, IDC_CONTACTS);
+	}
+	if (!targetWidth || targetWidth == m_lockedWindowWidth || !::IsWindow(m_hWnd)) {
+		return;
+	}
+
+	CRect windowRect;
+	CRect visibleRect;
+	GetWindowRect(&windowRect);
+	if (FAILED(DwmGetWindowAttribute(m_hWnd, DWMWA_EXTENDED_FRAME_BOUNDS,
+		&visibleRect, sizeof(visibleRect)))) {
+		visibleRect = windowRect;
+	}
+	int leftInset = visibleRect.left - windowRect.left;
+	int rightInset = windowRect.right - visibleRect.right;
+	MONITORINFO monitorInfo = { sizeof(MONITORINFO) };
+	if (!GetMonitorInfo(MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST), &monitorInfo)) {
+		return;
+	}
+	targetWidth = min(targetWidth,
+		monitorInfo.rcWork.right - monitorInfo.rcWork.left + leftInset + rightInset);
+	m_lockedWindowWidth = targetWidth;
+
+	if (m_docked) {
+		AppBarUpdateDock(false);
+		return;
+	}
+
+	int visibleWidth = targetWidth - leftInset - rightInset;
+	int visibleCenter = (visibleRect.left + visibleRect.right) / 2;
+	int targetVisibleLeft = visibleCenter - visibleWidth / 2;
+	targetVisibleLeft = max(monitorInfo.rcWork.left,
+		min(targetVisibleLeft, monitorInfo.rcWork.right - visibleWidth));
+	SetWindowPos(NULL, targetVisibleLeft - leftInset, windowRect.top,
+		targetWidth, windowRect.Height(), SWP_NOACTIVATE | SWP_NOZORDER);
+}
+
 void CmainDlg::AlignVisibleFrameVertically(const CRect& targetRect)
 {
 	CRect windowRect;
@@ -7168,7 +7287,7 @@ void CmainDlg::SnapMainWindowToWorkArea()
 	m_snappingMainWindow = false;
 	accountSettings.mainX = targetLeft;
 	accountSettings.mainY = targetTop;
-	accountSettings.mainW = windowRect.Width();
+	accountSettings.mainW = m_phoneBaseWindowWidth ? m_phoneBaseWindowWidth : windowRect.Width();
 	accountSettings.mainH = targetHeight;
 	AccountSettingsPendingSave();
 }
@@ -7271,6 +7390,9 @@ void CmainDlg::DialToneCallCancelled()
 void CmainDlg::BeginDialToneReadiness()
 {
 	StopDialTone();
+	if (m_callTracePanel && ::IsWindow(m_callTracePanel->m_hWnd)) {
+		m_callTracePanel->ShowTrace();
+	}
 	m_dialToneCheckPending = true;
 	SetDialToneSessionActive(true);
 	m_dialToneAudioMs = 0;
