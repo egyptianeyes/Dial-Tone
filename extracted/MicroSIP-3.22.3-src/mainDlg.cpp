@@ -470,11 +470,14 @@ public:
 		}
 		LOGFONT lf;
 		pj_bzero(&lf, sizeof(lf));
-		lf.lfHeight = -MulDiv(11, dpiY, 96);
+		lf.lfHeight = -MulDiv(10, dpiY, 96);
 		lf.lfWeight = FW_NORMAL;
 		lf.lfCharSet = DEFAULT_CHARSET;
+		StringCchCopy(lf.lfFaceName, LF_FACESIZE, _T("Segoe UI"));
+		traceFont.CreateFontIndirect(&lf);
+		lf.lfHeight = -MulDiv(11, dpiY, 96);
 		StringCchCopy(lf.lfFaceName, LF_FACESIZE, _T("Consolas"));
-		logFont.CreateFontIndirect(&lf);
+		notesFont.CreateFontIndirect(&lf);
 
 		notesMode.Create(Translate(_T("Call Notes")), WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | BS_PUSHLIKE,
 			CRect(0, 0, 0, 0), this, IDC_CALL_NOTES_MODE);
@@ -507,10 +510,11 @@ public:
 		clear.SetFont(parent->GetFont());
 		log.Create(WS_CHILD | WS_VSCROLL | WS_TABSTOP | ES_MULTILINE | ES_READONLY
 			| ES_AUTOVSCROLL | ES_LEFT, CRect(0, 0, 0, 0), this, IDC_CALL_TRACE_LOG);
-		log.SetFont(&logFont);
+		log.SetFont(&traceFont);
+		log.SendMessage(EM_SETTARGETDEVICE, 0, 0);
 		notes.Create(WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL | ES_LEFT,
 			CRect(0, 0, 0, 0), this, IDC_CALL_NOTES_EDIT);
-		notes.SetFont(&logFont);
+		notes.SetFont(&notesFont);
 		notes.SetPlaceholder(Translate(_T("Start typing...")));
 		notesMode.SetCheck(BST_CHECKED);
 		mode = 1;
@@ -527,8 +531,9 @@ public:
 		ResetPresentation();
 		lineCount = 0;
 		currentTrace.Empty();
+		visibleTraceSource = Translate(_T("No active call"));
 		if (::IsWindow(log.m_hWnd) && mode == 0 && viewingCurrent) {
-			log.SetWindowText(Translate(_T("No active call")));
+			RenderTrace();
 		}
 		UpdateActionStates();
 	}
@@ -538,6 +543,7 @@ public:
 		ResetPresentation();
 		lineCount = 0;
 		currentTrace.Empty();
+		visibleTraceSource.Empty();
 		if (::IsWindow(log.m_hWnd) && mode == 0 && viewingCurrent) {
 			log.SetWindowText(_T(""));
 		}
@@ -562,7 +568,9 @@ public:
 		}
 		bool follow = IsScrolledToBottom();
 		POINT original = GetScrollPosition();
-		AppendVisibleLine(line, text.GetLength());
+		if (lineCount == 1) log.SetWindowText(_T(""));
+		visibleTraceSource = currentTrace;
+		AppendVisibleEvent(text, lineCount > 1);
 		UpdateActionStates();
 		if (follow) {
 			log.SetSel(log.GetWindowTextLength(), log.GetWindowTextLength());
@@ -648,8 +656,9 @@ public:
 		viewingCurrent = true;
 		current.EnableWindow(TRUE);
 		if (mode == 0) {
-			log.SetWindowText(currentTrace.IsEmpty() && metadata.callId == PJSUA_INVALID_ID ? Translate(_T("No active call")) : currentTrace);
-			FormatTraceTimestamps();
+			visibleTraceSource = currentTrace.IsEmpty() && metadata.callId == PJSUA_INVALID_ID
+				? Translate(_T("No active call")) : currentTrace;
+			RenderTrace();
 			log.ShowWindow(SW_SHOW);
 			notes.ShowWindow(SW_HIDE);
 		}
@@ -709,8 +718,8 @@ public:
 		file.Close();
 		viewingCurrent = false;
 		if (mode == 0) {
-			log.SetWindowText(all);
-			FormatTraceTimestamps();
+			visibleTraceSource = all;
+			RenderTrace();
 		}
 		else {
 			notes.SetWindowText(all);
@@ -916,7 +925,7 @@ protected:
 	afx_msg void OnCopy()
 	{
 		CString text;
-		if (mode == 0) log.GetWindowText(text);
+		if (mode == 0) text = visibleTraceSource;
 		else notes.GetWindowText(text);
 		if (!text.IsEmpty()) mainDlg->CopyStringToClipboard(text);
 		UpdateActionStates();
@@ -1007,69 +1016,253 @@ private:
 	COLORREF EventColor() const { return darkMode ? DarkPalette::Text() : GetSysColor(COLOR_WINDOWTEXT); }
 	COLORREF TimestampColor() const { return darkMode ? DarkPalette::SecondaryText() : RGB(120, 120, 120); }
 
-	void AppendVisibleLine(const CString& line, int eventLength)
+	enum TraceTone { ToneNormal, ToneSuccess, ToneProgress, ToneWarning, ToneError };
+
+	struct TracePresentation {
+		CString category;
+		CString status;
+		CString detail;
+		TraceTone tone = ToneNormal;
+	};
+
+	COLORREF CategoryColor() const { return darkMode ? RGB(139, 180, 215) : RGB(65, 91, 115); }
+	COLORREF SuccessColor() const { return darkMode ? RGB(92, 190, 120) : RGB(38, 120, 72); }
+	COLORREF ProgressColor() const { return darkMode ? RGB(80, 190, 220) : RGB(25, 115, 150); }
+	COLORREF WarningColor() const { return darkMode ? RGB(225, 170, 75) : RGB(176, 112, 20); }
+	COLORREF ErrorColor() const { return darkMode ? RGB(235, 105, 105) : RGB(175, 55, 55); }
+
+	COLORREF ToneColor(TraceTone tone) const
 	{
-		if (lineCount == 1) log.SetWindowText(_T(""));
-		int length = log.GetWindowTextLength();
-		int timestampLength = line.GetLength() - eventLength;
-		log.SetSel(length, length);
-		CHARFORMAT2 timestamp;
-		memset(&timestamp, 0, sizeof(timestamp));
-		timestamp.cbSize = sizeof(CHARFORMAT2);
-		timestamp.dwMask = CFM_COLOR;
-		timestamp.crTextColor = TimestampColor();
-		log.SetSelectionCharFormat(timestamp);
-		log.ReplaceSel(line.Left(timestampLength));
-		CHARFORMAT2 event;
-		memset(&event, 0, sizeof(event));
-		event.cbSize = sizeof(CHARFORMAT2);
-		event.dwMask = CFM_COLOR;
-		event.crTextColor = EventColor();
-		log.SetSelectionCharFormat(event);
-		log.ReplaceSel(line.Mid(timestampLength));
+		switch (tone) {
+		case ToneSuccess: return SuccessColor();
+		case ToneProgress: return ProgressColor();
+		case ToneWarning: return WarningColor();
+		case ToneError: return ErrorColor();
+		default: return EventColor();
+		}
 	}
 
-	// Recolours the whole buffer, so it also covers historical snapshots and theme switches.
-	void FormatTraceTimestamps()
+	static bool TakePrefix(CString& text, CString prefix)
 	{
-		if (!::IsWindow(log.m_hWnd)) {
+		if (text.Left(prefix.GetLength()).CompareNoCase(prefix) != 0) return false;
+		text = text.Mid(prefix.GetLength());
+		text.TrimLeft();
+		return true;
+	}
+
+	static CString TakeDetail(CString& text)
+	{
+		int separator = text.Find(_T(" · "));
+		if (separator == -1) return _T("");
+		CString detail = text.Mid(separator + 3);
+		text = text.Left(separator);
+		return detail;
+	}
+
+	static TraceTone StatusTone(const CString& status)
+	{
+		CString upper = status;
+		upper.MakeUpper();
+		if (upper.Find(_T("NOT READY")) != -1 || upper.Find(_T("ERROR")) != -1
+			|| upper.Find(_T("FAILED")) != -1) return ToneError;
+		if (upper.Find(_T("DEGRADED")) != -1) return ToneWarning;
+		if (upper.Find(_T("CHECKING")) != -1 || upper.Find(_T("CONNECTING")) != -1
+			|| upper.Find(_T("EARLY")) != -1) return ToneProgress;
+		if (upper.Find(_T("READY")) != -1 || upper.Find(_T("ACTIVE")) != -1
+			|| upper.Find(_T("CONNECTED")) != -1 || upper.Find(_T("OK")) != -1) return ToneSuccess;
+		return ToneNormal;
+	}
+
+	static void SplitLabelValue(CString text, CString& label, CString& value)
+	{
+		int separator = text.Find(_T(':'));
+		if (separator == -1) {
+			label = text;
 			return;
 		}
-		CString text;
-		log.GetWindowText(text);
+		label = text.Left(separator);
+		value = text.Mid(separator + 1);
+		value.TrimLeft();
+	}
+
+	TracePresentation PresentEvent(CString text) const
+	{
+		TracePresentation result;
+		text.Trim();
+		CString remainder = text;
+		if (TakePrefix(remainder, _T("Dial-Tone"))) result.category = _T("DIAL-TONE");
+		else if (TakePrefix(remainder, _T("PBX"))) result.category = _T("PBX");
+		else if (TakePrefix(remainder, _T("SIP"))) result.category = _T("SIP");
+		else if (TakePrefix(remainder, _T("Audio"))) result.category = _T("AUDIO");
+		else if (TakePrefix(remainder, _T("Codecs"))) result.category = _T("CODECS");
+		CString readinessState = remainder;
+		readinessState.MakeUpper();
+		bool readiness = readinessState.Left(5) == _T("READY")
+			|| readinessState.Left(8) == _T("CHECKING")
+			|| readinessState.Left(8) == _T("DEGRADED")
+			|| readinessState.Left(9) == _T("NOT READY");
+		if (!result.category.IsEmpty() && readiness) {
+			remainder.Trim();
+			result.detail = TakeDetail(remainder);
+			result.status = remainder;
+			result.tone = StatusTone(result.status);
+			return result;
+		}
+
+		if (text.CompareNoCase(_T("Incoming call created")) == 0
+			|| text.CompareNoCase(_T("Outgoing call created")) == 0) {
+			result.category = _T("CALL");
+			result.status = text.Left(text.Find(_T(' ')));
+			result.status.MakeUpper();
+			result.detail = _T("Call created");
+			return result;
+		}
+		if (TakePrefix(remainder = text, _T("INVITE"))) {
+			result.category = _T("SIP");
+			result.status = _T("INVITE");
+			result.detail = remainder;
+			result.detail.Trim();
+			result.tone = StatusTone(result.detail.IsEmpty() ? result.status : result.detail);
+			return result;
+		}
+
+		CString label;
+		CString value;
+		SplitLabelValue(text, label, value);
+		if (label.CompareNoCase(_T("Call ID")) == 0 || label.CompareNoCase(_T("Account")) == 0) result.category = _T("CALL");
+		else if (label.CompareNoCase(_T("Server")) == 0) result.category = _T("PBX");
+		else if (label.CompareNoCase(_T("SIP Call-ID")) == 0 || label.CompareNoCase(_T("Local URI")) == 0
+			|| label.CompareNoCase(_T("Remote URI")) == 0 || label.CompareNoCase(_T("Remote contact")) == 0) result.category = _T("SIP");
+		else if (label.CompareNoCase(_T("State")) == 0 || label.Find(_T("identity")) != -1) result.category = _T("CALL");
+		else if (label.CompareNoCase(_T("Media")) == 0 || label.CompareNoCase(_T("Audio")) == 0) result.category = _T("MEDIA");
+		else if (label.CompareNoCase(_T("Remote RTP")) == 0 || text.Left(4).CompareNoCase(_T("RTP ")) == 0) result.category = _T("RTP");
+		if (!result.category.IsEmpty()) {
+			result.status = label;
+			result.status.MakeUpper();
+			result.detail = value;
+			if (label.CompareNoCase(_T("State")) == 0 || label.CompareNoCase(_T("Media")) == 0) {
+				result.status = value;
+				result.status.MakeUpper();
+				result.detail.Empty();
+			}
+			if (result.category == _T("RTP") && value.IsEmpty()) {
+				result.status = _T("QUALITY");
+				result.detail = text.Mid(4);
+			}
+			result.tone = StatusTone(result.detail.IsEmpty() ? result.status : result.detail);
+			return result;
+		}
+
+		result.detail = text;
+		return result;
+	}
+
+	void ApplyCharacterFormat(long start, long end, COLORREF color, bool bold = false, int pointSize = 0)
+	{
+		CHARFORMAT2 format;
+		memset(&format, 0, sizeof(format));
+		format.cbSize = sizeof(format);
+		format.dwMask = CFM_COLOR | CFM_BOLD;
+		format.crTextColor = color;
+		format.dwEffects = bold ? CFE_BOLD : 0;
+		if (pointSize) {
+			format.dwMask |= CFM_SIZE;
+			format.yHeight = pointSize * 20;
+		}
+		log.SetSel(start, end);
+		log.SetSelectionCharFormat(format);
+	}
+
+	void ApplyParagraphFormat(long start, long end, bool detail)
+	{
+		PARAFORMAT2 paragraph;
+		memset(&paragraph, 0, sizeof(paragraph));
+		paragraph.cbSize = sizeof(paragraph);
+		paragraph.dwMask = PFM_STARTINDENT | PFM_SPACEAFTER;
+		paragraph.dxStartIndent = detail ? MulDiv(14, 1440, dpiY) : 0;
+		paragraph.dySpaceAfter = MulDiv(detail ? 5 : 3, 20, 1);
+		log.SetSel(start, end);
+		log.SendMessage(EM_SETPARAFORMAT, 0, (LPARAM)&paragraph);
+	}
+
+	void AppendVisibleEvent(CString text, bool prependBreak)
+	{
+		CString timestamp;
+		if (text.GetLength() >= 12 && text[2] == _T(':') && text[5] == _T(':') && text[8] == _T('.')) {
+			timestamp = text.Left(12);
+			text = text.Mid(12);
+			text.TrimLeft();
+		}
+		TracePresentation presentation = PresentEvent(text);
+		int start = log.GetWindowTextLength();
+		CString header;
+		if (!timestamp.IsEmpty()) header = timestamp;
+		if (!presentation.category.IsEmpty()) {
+			if (!header.IsEmpty()) header += _T("  ");
+			header += presentation.category;
+		}
+		if (!presentation.status.IsEmpty()) {
+			if (!header.IsEmpty()) header += _T("  ");
+			header += presentation.status;
+		}
+		if (header.IsEmpty()) header = presentation.detail;
+		CString rendered = (prependBreak ? _T("\r\n") : _T("")) + header;
+		bool hasDetail = !presentation.detail.IsEmpty() && presentation.detail != header;
+		if (hasDetail) rendered += _T("\r\n") + presentation.detail;
+		log.SetSel(start, start);
+		log.ReplaceSel(rendered);
+
+		long headerStart = start + (prependBreak ? 2 : 0);
+		long headerEnd = headerStart + header.GetLength();
+		ApplyCharacterFormat(headerStart, headerEnd, EventColor());
+		if (!timestamp.IsEmpty()) ApplyCharacterFormat(headerStart, headerStart + timestamp.GetLength(), TimestampColor(), false, 9);
+		long categoryStart = headerStart + (timestamp.IsEmpty() ? 0 : timestamp.GetLength() + 2);
+		if (!presentation.category.IsEmpty()) {
+			ApplyCharacterFormat(categoryStart, categoryStart + presentation.category.GetLength(), CategoryColor(), true);
+		}
+		if (!presentation.status.IsEmpty()) {
+			long statusStart = headerEnd - presentation.status.GetLength();
+			ApplyCharacterFormat(statusStart, headerEnd, ToneColor(presentation.tone), true);
+		}
+		ApplyParagraphFormat(headerStart, headerEnd, false);
+		if (hasDetail) {
+			long detailStart = headerEnd + 2;
+			long detailEnd = detailStart + presentation.detail.GetLength();
+			ApplyCharacterFormat(detailStart, detailEnd, EventColor());
+			ApplyParagraphFormat(detailStart, detailEnd, true);
+		}
+		log.SetSel(log.GetWindowTextLength(), log.GetWindowTextLength());
+	}
+
+	// Rebuilds the visual layer from authoritative plain text for history and theme changes.
+	void RenderTrace()
+	{
+		if (!::IsWindow(log.m_hWnd)) return;
 		POINT scroll = GetScrollPosition();
 		long selectionStart = 0;
 		long selectionEnd = 0;
 		log.GetSel(selectionStart, selectionEnd);
 		log.SetRedraw(FALSE);
-		CHARFORMAT2 event;
-		memset(&event, 0, sizeof(event));
-		event.cbSize = sizeof(CHARFORMAT2);
-		event.dwMask = CFM_COLOR;
-		event.crTextColor = EventColor();
-		log.SetSel(0, -1);
-		log.SetSelectionCharFormat(event);
-		CHARFORMAT2 timestamp;
-		memset(&timestamp, 0, sizeof(timestamp));
-		timestamp.cbSize = sizeof(CHARFORMAT2);
-		timestamp.dwMask = CFM_COLOR;
-		timestamp.crTextColor = TimestampColor();
+		log.SetWindowText(_T(""));
 		int start = 0;
-		while (start < text.GetLength()) {
-			int end = text.Find(_T('\n'), start);
-			int length = (end == -1 ? text.GetLength() : end) - start;
-			if (length >= 14 && text.Mid(start + 2, 1) == _T(":") && text.Mid(start + 5, 1) == _T(":")) {
-				log.SetSel(start, start + 14);
-				log.SetSelectionCharFormat(timestamp);
-			}
+		bool prependBreak = false;
+		while (start < visibleTraceSource.GetLength()) {
+			int end = visibleTraceSource.Find(_T('\n'), start);
+			CString line = end == -1 ? visibleTraceSource.Mid(start) : visibleTraceSource.Mid(start, end - start);
+			line.TrimRight(_T("\r"));
+			AppendVisibleEvent(line, prependBreak);
+			prependBreak = true;
 			if (end == -1) break;
 			start = end + 1;
 		}
-		log.SetSel(selectionStart, selectionEnd);
+		int renderedLength = log.GetWindowTextLength();
+		log.SetSel(min(selectionStart, renderedLength), min(selectionEnd, renderedLength));
 		SetScrollPosition(scroll);
 		log.SetRedraw(TRUE);
 		log.Invalidate();
 	}
+
+	void FormatTraceTimestamps() { RenderTrace(); }
 
 	struct CallMetadata {
 		pjsua_call_id callId = PJSUA_INVALID_ID;
@@ -1184,7 +1377,7 @@ private:
 		if (!dc) {
 			return true;
 		}
-		CFont* oldFont = dc->SelectObject(&logFont);
+		CFont* oldFont = dc->SelectObject(&traceFont);
 		TEXTMETRIC tm;
 		dc->GetTextMetrics(&tm);
 		dc->SelectObject(oldFont);
@@ -1233,12 +1426,14 @@ private:
 	CButtonBottom clear;
 	CRichEditCtrl log;
 	CPlaceholderEdit notes;
-	CFont logFont;
+	CFont traceFont;
+	CFont notesFont;
 	int lineCount;
 	bool darkMode = false;
 	int mode;
 	bool viewingCurrent;
 	CString currentTrace;
+	CString visibleTraceSource;
 	CString currentNotes;
 	CString savedCurrentNotes;
 	CArray<CString, CString&> recentPaths;
