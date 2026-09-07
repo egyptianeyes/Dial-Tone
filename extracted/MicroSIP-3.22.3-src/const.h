@@ -22,6 +22,5 @@
 #define _DIALTONE_REVISION "dt0"
 #define _DIALTONE_VERSION _GLOBAL_VERSION "-" _DIALTONE_REVISION
 #define _GLOBAL_KEY "*********"
-#define _GLOBAL_VIDEO
 #define _GLOBAL_NAME "MicroSIP"
 #define _GLOBAL_COMPANY "www.microsip.org"
