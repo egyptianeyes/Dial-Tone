@@ -3650,6 +3650,8 @@ int CmainDlg::OnCreate(LPCREATESTRUCT lpCreateStruct)
 BOOL CmainDlg::OnInitDialog()
 {
 	CBaseDialog::OnInitDialog();
+	BOOL allowNcPaint = TRUE;
+	DwmSetWindowAttribute(m_hWnd, DWMWA_ALLOW_NCPAINT, &allowNcPaint, sizeof(allowNcPaint));
 	// Apply the final fixed-frame style to the completed HWND and invalidate the
 	// cached non-client layout before calculating the custom minimise rectangle.
 	ModifyStyle(WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME, 0,
