@@ -56,7 +56,6 @@
 #include <shellapi.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
-#include <vssym32.h>
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "dwmapi.lib")
@@ -3343,15 +3342,6 @@ void CmainDlg::DoDataExchange(CDataExchange * pDX)
 BEGIN_MESSAGE_MAP(CmainDlg, CBaseDialog)
 	ON_WM_CREATE()
 	ON_WM_SYSCOMMAND()
-	ON_WM_NCPAINT()
-	ON_WM_NCACTIVATE()
-	ON_WM_NCHITTEST()
-	ON_WM_NCMOUSEMOVE()
-	ON_WM_NCMOUSELEAVE()
-	ON_WM_NCLBUTTONDOWN()
-	ON_WM_MOUSEMOVE()
-	ON_WM_LBUTTONUP()
-	ON_WM_CAPTURECHANGED()
 	ON_WM_QUERYENDSESSION()
 	ON_WM_TIMER()
 	ON_WM_MOVE()
@@ -3480,10 +3470,6 @@ CmainDlg::CmainDlg(CWnd * pParent /*=NULL*/)
 	mmNotificationClient = NULL;
 	m_freepbxFooter = NULL;
 	m_gdiplusToken = 0;
-	m_captionMinimizeHot = false;
-	m_captionMinimizePressed = false;
-	m_captionMinimizeTracking = false;
-	m_captionActive = true;
 	updateCheckerShow = false;
 
 	pageDialer = NULL;
@@ -3593,10 +3579,9 @@ int CmainDlg::OnCreate(LPCREATESTRUCT lpCreateStruct)
 		dpiY = 96;
 	}
 
-	// Native Win32 captions expose minimise/maximise as a paired button group.
-	// Remove both native slots; the normal close button and a single themed
-	// minimise button drawn by this dialog provide the required two-button caption.
-	lpCreateStruct->style &= ~(WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
+	// The main window never supports maximising. Enforce the resource style at
+	// creation time as well so the non-client frame contains no maximise button.
+	lpCreateStruct->style &= ~WS_MAXIMIZEBOX;
 	::SetWindowLong(m_hWnd, GWL_STYLE, lpCreateStruct->style);
 
 	bool setpos = false;
@@ -3650,15 +3635,10 @@ int CmainDlg::OnCreate(LPCREATESTRUCT lpCreateStruct)
 BOOL CmainDlg::OnInitDialog()
 {
 	CBaseDialog::OnInitDialog();
-	BOOL allowNcPaint = TRUE;
-	DwmSetWindowAttribute(m_hWnd, DWMWA_ALLOW_NCPAINT, &allowNcPaint, sizeof(allowNcPaint));
-	// Apply the final fixed-frame style to the completed HWND and invalidate the
-	// cached non-client layout before calculating the custom minimise rectangle.
-	ModifyStyle(WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME, 0,
+	// OnCreate runs while MFC is still completing dialog creation. Reapply the
+	// final fixed-frame style now and invalidate the cached non-client layout.
+	ModifyStyle(WS_MAXIMIZEBOX | WS_THICKFRAME, 0,
 		SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-	LONG_PTR finalStyle = ::GetWindowLongPtr(m_hWnd, GWL_STYLE);
-	LONG_PTR finalExStyle = ::GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
-	ASSERT((finalStyle & (WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME)) == 0);
 	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
 	Gdiplus::GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
 
@@ -6937,156 +6917,6 @@ namespace
 	}
 }
 
-bool CmainDlg::GetCaptionMinimizeRect(CRect& rect) const
-{
-	rect.SetRectEmpty();
-	if (!::IsWindow(m_hWnd)) return false;
-	TITLEBARINFOEX titleInfo;
-	memset(&titleInfo, 0, sizeof(titleInfo));
-	titleInfo.cbSize = sizeof(titleInfo);
-	SendMessage(WM_GETTITLEBARINFOEX, 0, (LPARAM)&titleInfo);
-	CRect closeRect(titleInfo.rgrect[5]);
-	if (closeRect.IsRectEmpty()) return false;
-	CRect windowRect;
-	GetWindowRect(&windowRect);
-	int direction = closeRect.CenterPoint().x < windowRect.CenterPoint().x ? 1 : -1;
-	rect = closeRect;
-	rect.OffsetRect(direction * closeRect.Width(), 0);
-	return rect.Width() > 0 && rect.Height() > 0;
-}
-
-void CmainDlg::DrawCaptionMinimize()
-{
-	CRect screenRect;
-	if (!GetCaptionMinimizeRect(screenRect)) return;
-	CRect windowRect;
-	GetWindowRect(&windowRect);
-	CRect drawRect = screenRect;
-	drawRect.OffsetRect(-windowRect.left, -windowRect.top);
-	CWindowDC dc(this);
-	HTHEME theme = OpenThemeData(m_hWnd, L"WINDOW");
-	if (theme) {
-		int state = m_captionMinimizePressed ? MINBS_PUSHED
-			: (m_captionMinimizeHot ? MINBS_HOT : MINBS_NORMAL);
-		DrawThemeBackground(theme, dc.m_hDC, WP_MINBUTTON, state, &drawRect, NULL);
-		CloseThemeData(theme);
-	}
-	else {
-		UINT state = DFCS_CAPTIONMIN;
-		if (m_captionMinimizePressed) state |= DFCS_PUSHED;
-		if (!m_captionActive) state |= DFCS_INACTIVE;
-		dc.DrawFrameControl(drawRect, DFC_CAPTION, state);
-	}
-}
-
-void CmainDlg::RedrawCaptionMinimize()
-{
-	RedrawWindow(NULL, NULL, RDW_INVALIDATE | RDW_FRAME | RDW_UPDATENOW);
-}
-
-void CmainDlg::OnNcPaint()
-{
-	CBaseDialog::OnNcPaint();
-	DrawCaptionMinimize();
-}
-
-BOOL CmainDlg::OnNcActivate(BOOL active)
-{
-	m_captionActive = active != FALSE;
-	BOOL result = CBaseDialog::OnNcActivate(active);
-	DrawCaptionMinimize();
-	return result;
-}
-
-LRESULT CmainDlg::OnNcHitTest(CPoint point)
-{
-	CRect rect;
-	if (GetCaptionMinimizeRect(rect) && rect.PtInRect(point)) return HTMINBUTTON;
-	return CBaseDialog::OnNcHitTest(point);
-}
-
-void CmainDlg::OnNcMouseMove(UINT hitTest, CPoint point)
-{
-	CRect rect;
-	bool hot = GetCaptionMinimizeRect(rect) && rect.PtInRect(point);
-	if (hot != m_captionMinimizeHot) {
-		m_captionMinimizeHot = hot;
-		RedrawCaptionMinimize();
-	}
-	if (hot) {
-		TRACKMOUSEEVENT tracking = { sizeof(tracking), TME_LEAVE | TME_NONCLIENT, m_hWnd, 0 };
-		TrackMouseEvent(&tracking);
-	}
-	CBaseDialog::OnNcMouseMove(hitTest, point);
-}
-
-void CmainDlg::OnNcMouseLeave()
-{
-	if (m_captionMinimizeHot || (m_captionMinimizePressed && !m_captionMinimizeTracking)) {
-		m_captionMinimizeHot = false;
-		if (!m_captionMinimizeTracking) m_captionMinimizePressed = false;
-		RedrawCaptionMinimize();
-	}
-	CBaseDialog::OnNcMouseLeave();
-}
-
-void CmainDlg::OnNcLButtonDown(UINT hitTest, CPoint point)
-{
-	if (hitTest == HTMINBUTTON) {
-		m_captionMinimizeTracking = true;
-		m_captionMinimizePressed = true;
-		SetCapture();
-		RedrawCaptionMinimize();
-		return;
-	}
-	CBaseDialog::OnNcLButtonDown(hitTest, point);
-}
-
-void CmainDlg::OnMouseMove(UINT flags, CPoint point)
-{
-	if (m_captionMinimizeTracking) {
-		ClientToScreen(&point);
-		CRect rect;
-		bool pressed = GetCaptionMinimizeRect(rect) && rect.PtInRect(point);
-		if (pressed != m_captionMinimizePressed) {
-			m_captionMinimizePressed = pressed;
-			RedrawCaptionMinimize();
-		}
-	}
-	CBaseDialog::OnMouseMove(flags, point);
-}
-
-void CmainDlg::OnLButtonUp(UINT flags, CPoint point)
-{
-	if (m_captionMinimizeTracking) {
-		ClientToScreen(&point);
-		CRect rect;
-		bool minimize = GetCaptionMinimizeRect(rect) && rect.PtInRect(point);
-		m_captionMinimizeTracking = false;
-		m_captionMinimizePressed = false;
-		m_captionMinimizeHot = false;
-		if (GetCapture() == this) ReleaseCapture();
-		if (minimize) {
-			if (!accountSettings.singleMode) messagesDlg->ShowWindow(SW_HIDE);
-			ShowWindow(SW_MINIMIZE);
-			return;
-		}
-		RedrawCaptionMinimize();
-	}
-	CBaseDialog::OnLButtonUp(flags, point);
-}
-
-void CmainDlg::OnCaptureChanged(CWnd* window)
-{
-	if (m_captionMinimizeTracking) {
-		m_captionMinimizeTracking = false;
-		m_captionMinimizePressed = false;
-		m_captionMinimizeHot = false;
-		RedrawCaptionMinimize();
-	}
-	CBaseDialog::OnCaptureChanged(window);
-}
-
 BOOL CmainDlg::OnQueryEndSession()
 {
 	return TRUE;
@@ -7206,9 +7036,6 @@ void CmainDlg::OnShowWindow(BOOL bShow, UINT nStatus)
 	}
 	else if (m_docked && !m_appBarRegistered) {
 		AppBarUpdateDock(false);
-	}
-	if (bShow) {
-		RedrawCaptionMinimize();
 	}
 }
 

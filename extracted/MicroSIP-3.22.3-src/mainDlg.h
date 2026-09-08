@@ -106,10 +106,6 @@ public:
 	CRect m_appBarMonitor;
 	CRect m_dragWindowRect;
 	bool m_dragValid;
-	bool m_captionMinimizeHot;
-	bool m_captionMinimizePressed;
-	bool m_captionMinimizeTracking;
-	bool m_captionActive;
 
 	CString callIdIncomingIgnore;
 	CList<int,int> toneCalls;
@@ -253,9 +249,6 @@ protected:
 	virtual void PostNcDestroy();
 	virtual LRESULT WindowProc(UINT message, WPARAM wParam, LPARAM lParam);
 	virtual BOOL PreTranslateMessage(MSG* pMsg);
-	bool GetCaptionMinimizeRect(CRect& rect) const;
-	void DrawCaptionMinimize();
-	void RedrawCaptionMinimize();
 
 	// Generated message map functions
 	afx_msg LRESULT OnUpdateWindowText(WPARAM wParam,LPARAM lParam);
@@ -281,15 +274,6 @@ public:
 	afx_msg LRESULT OnRestart(WPARAM, LPARAM);
 	afx_msg LRESULT OnPowerBroadcast(WPARAM, LPARAM);
 	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
-	afx_msg void OnNcPaint();
-	afx_msg BOOL OnNcActivate(BOOL active);
-	afx_msg LRESULT OnNcHitTest(CPoint point);
-	afx_msg void OnNcMouseMove(UINT hitTest, CPoint point);
-	afx_msg void OnNcMouseLeave();
-	afx_msg void OnNcLButtonDown(UINT hitTest, CPoint point);
-	afx_msg void OnMouseMove(UINT flags, CPoint point);
-	afx_msg void OnLButtonUp(UINT flags, CPoint point);
-	afx_msg void OnCaptureChanged(CWnd* window);
 	afx_msg BOOL OnQueryEndSession();
 	afx_msg void OnBnClickedOk();
 	afx_msg void OnBnClickedMenu();
