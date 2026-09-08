@@ -24,7 +24,7 @@
 #include "mainDlg.h"
 #include "langpack.h"
 #include "CSVFile.h"
-#include "Markup.h"
+#include "XmlLiteDocument.h"
 #include "Transfer.h"
 #include "afxinet.h"
 #include "MessageBoxX.h"
@@ -35,7 +35,7 @@ static UINT_PTR blinkTimer = NULL;
 static bool blinkState = false;
 
 Contacts::Contacts(CWnd* pParent /*=NULL*/)
-	: CBaseDialog(Contacts::IDD, pParent)
+	: CBaseDialog(Contacts::IDD, pParent), contactsXmlLoadFailed(false)
 {
 	Create(IDD, pParent);
 }
@@ -1088,36 +1088,37 @@ void Contacts::ContactDeleteRaw(Contact* contact)
 
 void Contacts::ContactsSave()
 {
+	if (contactsXmlLoadFailed) return;
 	if (isFiltered()) {
 		filterReset();
 	}
-	CMarkup xml;
-	xml.AddElem(_T("contacts"));
-	xml.IntoElem();
+	DialToneXml::Element xml(_T("contacts"));
 
 	CListCtrl* list = (CListCtrl*)GetDlgItem(IDC_CONTACTS);
 	int count = list->GetItemCount();
 	for (int i = 0; i < count; i++) {
 		Contact* pContact = (Contact*)list->GetItemData(i);
-		xml.AddElem(_T("contact"));
-		xml.AddAttrib(_T("name"), pContact->name);
-		xml.AddAttrib(_T("number"), pContact->number);
-		xml.AddAttrib(_T("firstname"), pContact->firstname);
-		xml.AddAttrib(_T("lastname"), pContact->lastname);
-		xml.AddAttrib(_T("phone"), pContact->phone);
-		xml.AddAttrib(_T("mobile"), pContact->mobile);
-		xml.AddAttrib(_T("email"), pContact->email);
-		xml.AddAttrib(_T("address"), pContact->address);
-		xml.AddAttrib(_T("city"), pContact->city);
-		xml.AddAttrib(_T("state"), pContact->state);
-		xml.AddAttrib(_T("zip"), pContact->zip);
-		xml.AddAttrib(_T("comment"), pContact->comment);
-		xml.AddAttrib(_T("id"), pContact->id);
-		xml.AddAttrib(_T("info"), pContact->info);
-		xml.AddAttrib(_T("presence"), pContact->presence ? _T("1") : _T("0"));
-		xml.AddAttrib(_T("starred"), pContact->starred ? _T("1") : _T("0"));
-		xml.AddAttrib(_T("directory"), pContact->directory ? _T("1") : _T("0"));
+		DialToneXml::Element& contact = xml.AddChild(_T("contact"));
+		contact.SetAttribute(_T("name"), pContact->name);
+		contact.SetAttribute(_T("number"), pContact->number);
+		contact.SetAttribute(_T("firstname"), pContact->firstname);
+		contact.SetAttribute(_T("lastname"), pContact->lastname);
+		contact.SetAttribute(_T("phone"), pContact->phone);
+		contact.SetAttribute(_T("mobile"), pContact->mobile);
+		contact.SetAttribute(_T("email"), pContact->email);
+		contact.SetAttribute(_T("address"), pContact->address);
+		contact.SetAttribute(_T("city"), pContact->city);
+		contact.SetAttribute(_T("state"), pContact->state);
+		contact.SetAttribute(_T("zip"), pContact->zip);
+		contact.SetAttribute(_T("comment"), pContact->comment);
+		contact.SetAttribute(_T("id"), pContact->id);
+		contact.SetAttribute(_T("info"), pContact->info);
+		contact.SetAttribute(_T("presence"), pContact->presence ? _T("1") : _T("0"));
+		contact.SetAttribute(_T("starred"), pContact->starred ? _T("1") : _T("0"));
+		contact.SetAttribute(_T("directory"), pContact->directory ? _T("1") : _T("0"));
 	}
+	CStringA xmlBody;
+	if (!DialToneXml::Write(xml, xmlBody)) return;
 
 	CString filename = accountSettings.pathRoaming;
 	filename.Append(_T("Contacts.xml"));
@@ -1125,7 +1126,7 @@ void Contacts::ContactsSave()
 	CFileException fileException;
 	if (file.Open(filename, CFile::modeCreate | CFile::modeWrite, &fileException)) {
 		CStringA str = "<?xml version=\"1.0\"?>\r\n";
-		str.Append(MSIP::Utf8EncodeUni(xml.GetDoc()));
+		str.Append(xmlBody);
 		file.Write(str.GetBuffer(), str.GetLength());
 		file.Close();
 	}
@@ -1148,42 +1149,38 @@ void Contacts::ContactsLoad()
 			data.ReleaseBuffer(len);
 		} while (i > 0);
 		file.Close();
-		CMarkup xml;
-		BOOL bResult = xml.SetDoc(MSIP::Utf8DecodeUni(data));
-		if (bResult) {
-			if (xml.FindElem(_T("contacts"))) {
-				while (xml.FindChildElem(_T("contact"))) {
-					xml.IntoElem();
-					Contact contact;
-					contact.name = xml.GetAttrib(_T("name"));
-					contact.number = xml.GetAttrib(_T("number"));
-					contact.firstname = xml.GetAttrib(_T("firstname"));
-					contact.lastname = xml.GetAttrib(_T("lastname"));
-					contact.phone = xml.GetAttrib(_T("phone"));
-					contact.mobile = xml.GetAttrib(_T("mobile"));
-					contact.email = xml.GetAttrib(_T("email"));
-					contact.address = xml.GetAttrib(_T("address"));
-					contact.city = xml.GetAttrib(_T("city"));
-					contact.state = xml.GetAttrib(_T("state"));
-					contact.zip = xml.GetAttrib(_T("zip"));
-					contact.comment = xml.GetAttrib(_T("comment"));
-					contact.id = xml.GetAttrib(_T("id"));
-					contact.info = xml.GetAttrib(_T("info"));
-					CString rab;
-					rab = xml.GetAttrib(_T("presence"));
-					contact.presence = rab == _T("1");
-					rab = xml.GetAttrib(_T("starred"));
-					contact.starred = rab == _T("1");
-					rab = xml.GetAttrib(_T("directory"));
-					contact.directory = rab == _T("1");
-					if (!contact.number.IsEmpty()) {
-						if (!isFiltered(&contact)) {
-							ContactAdd(contact, FALSE, TRUE);
-						}
-					}
-					xml.OutOfElem();
-				}
-			}
+		DialToneXml::Element xml;
+		if (!DialToneXml::Parse(data, xml) || xml.name != _T("contacts")) {
+			contactsXmlLoadFailed = true;
+			return;
+		}
+		contactsXmlLoadFailed = false;
+		std::vector<Contact> loadedContacts;
+		for (size_t i = 0; i < xml.children.size(); ++i) {
+			const DialToneXml::Element& item = xml.children[i];
+			if (item.name != _T("contact")) continue;
+			Contact contact;
+			contact.name = item.GetAttribute(_T("name"));
+			contact.number = item.GetAttribute(_T("number"));
+			contact.firstname = item.GetAttribute(_T("firstname"));
+			contact.lastname = item.GetAttribute(_T("lastname"));
+			contact.phone = item.GetAttribute(_T("phone"));
+			contact.mobile = item.GetAttribute(_T("mobile"));
+			contact.email = item.GetAttribute(_T("email"));
+			contact.address = item.GetAttribute(_T("address"));
+			contact.city = item.GetAttribute(_T("city"));
+			contact.state = item.GetAttribute(_T("state"));
+			contact.zip = item.GetAttribute(_T("zip"));
+			contact.comment = item.GetAttribute(_T("comment"));
+			contact.id = item.GetAttribute(_T("id"));
+			contact.info = item.GetAttribute(_T("info"));
+			contact.presence = item.GetAttribute(_T("presence")) == _T("1");
+			contact.starred = item.GetAttribute(_T("starred")) == _T("1");
+			contact.directory = item.GetAttribute(_T("directory")) == _T("1");
+			if (!contact.number.IsEmpty()) loadedContacts.push_back(contact);
+		}
+		for (size_t i = 0; i < loadedContacts.size(); ++i) {
+			if (!isFiltered(&loadedContacts[i])) ContactAdd(loadedContacts[i], FALSE, TRUE);
 		}
 	}
 	else {

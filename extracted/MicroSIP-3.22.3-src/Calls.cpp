@@ -26,7 +26,7 @@
 #include "mainDlg.h"
 #include "langpack.h"
 #include "CSVFile.h"
-#include "Markup.h"
+#include "XmlLiteDocument.h"
 #include <uxtheme.h>
 #include "DarkPalette.h"
 
@@ -458,31 +458,31 @@ void Calls::OnMenuExport()
 			if (dlgFile.GetFileExt().IsEmpty()) {
 				filename.Append(_T(".xml"));
 			}
-			CMarkup xml;
-			xml.AddElem(_T("calls"));
-			xml.IntoElem();
+			DialToneXml::Element xml(_T("calls"));
 			CListCtrl* list = (CListCtrl*)GetDlgItem(IDC_CALLS);
 			int count = list->GetItemCount();
 			for (int i = 0; i < count; i++) {
 				Call* pCall = (Call*)list->GetItemData(i);
-				xml.AddElem(_T("call"));
-				xml.AddAttrib(_T("type"), pCall->type == MSIP_CALL_OUT ? _T("out") : (pCall->type == MSIP_CALL_IN ? _T("in") :
+				DialToneXml::Element& call = xml.AddChild(_T("call"));
+				call.SetAttribute(_T("type"), pCall->type == MSIP_CALL_OUT ? _T("out") : (pCall->type == MSIP_CALL_IN ? _T("in") :
 					(pCall->type == MSIP_CALL_MISS ? _T("miss") : _T("else"))
 					));
-				xml.AddAttrib(_T("name"), pCall->name);
-				xml.AddAttrib(_T("number"), pCall->number);
+				call.SetAttribute(_T("name"), pCall->name);
+				call.SetAttribute(_T("number"), pCall->number);
 				CString str;
 				str.Format(_T("%d"), pCall->time);
-				xml.AddAttrib(_T("time"), str);
+				call.SetAttribute(_T("time"), str);
 				str.Format(_T("%d"), pCall->duration);
-				xml.AddAttrib(_T("duration"), str);
-				xml.AddAttrib(_T("info"), pCall->info);
+				call.SetAttribute(_T("duration"), str);
+				call.SetAttribute(_T("info"), pCall->info);
 			}
+			CStringA xmlBody;
+			if (!DialToneXml::Write(xml, xmlBody)) return;
 			CFile file;
 			CFileException fileException;
 			if (file.Open(filename, CFile::modeCreate | CFile::modeWrite, &fileException)) {
 				CStringA str = "<?xml version=\"1.0\"?>\r\n";
-				str.Append(MSIP::Utf8EncodeUni(xml.GetDoc()));
+				str.Append(xmlBody);
 				file.Write(str.GetBuffer(), str.GetLength());
 				file.Close();
 			}

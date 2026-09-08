@@ -111,7 +111,7 @@
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>opus.lib;Wtsapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opus.lib;Wtsapi32.lib;xmllite.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\lib\;..\third_party\lib\;..\third_party\openssl\$(Platform)\lib\;..\third_party\ipp\$(Platform)\;..\third_party\opus\$(Platform)\;..\third_party\silk\$(Platform)\$(Configuration)\;..\third_party\ffmpeg\$(Platform)\;..\third_party\vpx\$(Platform)\;..\third_party\sdl\$(Platform)\;..\third_party\opencore-amrnb\$(Platform)\;..\third_party\vo-amrwbenc\$(Platform)\;..\third_party\opencore-amrwb\$(Platform)\;..\third_party\hid\$(Platform)\;$(WindowsSDK_LibraryPath_x86);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Windows</SubSystem>
       <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
@@ -147,7 +147,7 @@
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>opus.lib;Wtsapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opus.lib;Wtsapi32.lib;xmllite.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\lib\;..\third_party\lib\;..\third_party\openssl\$(Platform)\lib\;..\third_party\ipp\$(Platform)\;..\third_party\opus\$(Platform)\;..\third_party\silk\$(Platform)\$(Configuration)\;..\third_party\ffmpeg\$(Platform)\;..\third_party\vpx\$(Platform)\;..\third_party\sdl\$(Platform)\;..\third_party\opencore-amrnb\$(Platform)\;..\third_party\vo-amrwbenc\$(Platform)\;..\third_party\opencore-amrwb\$(Platform)\;..\third_party\hid\$(Platform)\;$(WindowsSDK_LibraryPath_x64);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <SubSystem>Windows</SubSystem>
       <AdditionalOptions>/OPT:NOLBR %(AdditionalOptions)</AdditionalOptions>
@@ -178,7 +178,7 @@
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>opus.lib;Wtsapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opus.lib;Wtsapi32.lib;xmllite.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\lib\;..\third_party\lib\;..\third_party\openssl\$(Platform)\lib\;..\third_party\ipp\$(Platform)\;..\third_party\opus\$(Platform)\;..\third_party\silk\$(Platform)\$(Configuration)\;..\third_party\ffmpeg\$(Platform)\;..\third_party\vpx\$(Platform)\;..\third_party\sdl\$(Platform)\;..\third_party\opencore-amrnb\$(Platform)\;..\third_party\vo-amrwbenc\$(Platform)\;..\third_party\opencore-amrwb\$(Platform)\;..\third_party\hid\$(Platform)\;$(WindowsSDK_LibraryPath_x86);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -214,7 +214,7 @@
       <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>opus.lib;Wtsapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opus.lib;Wtsapi32.lib;xmllite.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\lib\;..\third_party\lib\;..\third_party\openssl\$(Platform)\lib\;..\third_party\ipp\$(Platform)\;..\third_party\opus\$(Platform)\;..\third_party\silk\$(Platform)\$(Configuration)\;..\third_party\ffmpeg\$(Platform)\;..\third_party\vpx\$(Platform)\;..\third_party\sdl\$(Platform)\;..\third_party\opencore-amrnb\$(Platform)\;..\third_party\vo-amrwbenc\$(Platform)\;..\third_party\opencore-amrwb\$(Platform)\;..\third_party\hid\$(Platform)\;$(WindowsSDK_LibraryPath_x64);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -260,7 +260,7 @@
     <ClCompile Include="lib\jsoncpp\json_writer.cpp" />
     <ClCompile Include="lib\langpack.cpp" />
     <ClCompile Include="LevelsSliderCtrl.cpp" />
-    <ClCompile Include="lib\Markup.cpp" />
+    <ClCompile Include="lib\XmlLiteDocument.cpp" />
     <ClCompile Include="lib\MessageBoxX.cpp" />
     <ClCompile Include="lib\ModelessMessageBox.cpp" />
     <ClCompile Include="lib\MSIP.cpp" />
@@ -316,7 +316,7 @@
     <ClInclude Include="lib\jsoncpp\json\json.h" />
     <ClInclude Include="lib\langpack.h" />
     <ClInclude Include="LevelsSliderCtrl.h" />
-    <ClInclude Include="lib\Markup.h" />
+    <ClInclude Include="lib\XmlLiteDocument.h" />
     <ClInclude Include="lib\MessageBoxX.h" />
     <ClInclude Include="lib\ModelessMessageBox.h" />
     <ClInclude Include="lib\MSIP.h" />

@@ -26,7 +26,7 @@
 #include "global.h"
 #include "ModelessMessageBox.h"
 #include "json.h"
-#include "Markup.h"
+#include "XmlLiteDocument.h"
 #include "langpack.h"
 #include "jumplist.h"
 #include "atlenc.h"
@@ -1025,7 +1025,7 @@ private:
 		TraceTone tone = ToneNormal;
 	};
 
-	COLORREF CategoryColor() const { return darkMode ? RGB(139, 180, 215) : RGB(65, 91, 115); }
+	COLORREF CategoryColor() const { return darkMode ? RGB(145, 165, 182) : RGB(88, 105, 120); }
 	COLORREF SuccessColor() const { return darkMode ? RGB(92, 190, 120) : RGB(38, 120, 72); }
 	COLORREF ProgressColor() const { return darkMode ? RGB(80, 190, 220) : RGB(25, 115, 150); }
 	COLORREF WarningColor() const { return darkMode ? RGB(225, 170, 75) : RGB(176, 112, 20); }
@@ -1173,7 +1173,7 @@ private:
 		log.SetSelectionCharFormat(format);
 	}
 
-	void ApplyParagraphFormat(long start, long end, bool detail)
+	void ApplyParagraphFormat(long start, long end, bool detail, int tabStopPixels = 0)
 	{
 		PARAFORMAT2 paragraph;
 		memset(&paragraph, 0, sizeof(paragraph));
@@ -1181,6 +1181,11 @@ private:
 		paragraph.dwMask = PFM_STARTINDENT | PFM_SPACEAFTER;
 		paragraph.dxStartIndent = detail ? MulDiv(14, 1440, dpiY) : 0;
 		paragraph.dySpaceAfter = MulDiv(detail ? 5 : 3, 20, 1);
+		if (tabStopPixels > 0) {
+			paragraph.dwMask |= PFM_TABSTOPS;
+			paragraph.cTabCount = 1;
+			paragraph.rgxTabs[0] = MulDiv(tabStopPixels, 1440, dpiY);
+		}
 		log.SetSel(start, end);
 		log.SendMessage(EM_SETPARAFORMAT, 0, (LPARAM)&paragraph);
 	}
@@ -1202,7 +1207,7 @@ private:
 			header += presentation.category;
 		}
 		if (!presentation.status.IsEmpty()) {
-			if (!header.IsEmpty()) header += _T("  ");
+			if (!header.IsEmpty()) header += presentation.category.IsEmpty() ? _T("  ") : _T("\t");
 			header += presentation.status;
 		}
 		if (header.IsEmpty()) header = presentation.detail;
@@ -1224,7 +1229,13 @@ private:
 			long statusStart = headerEnd - presentation.status.GetLength();
 			ApplyCharacterFormat(statusStart, headerEnd, ToneColor(presentation.tone), true);
 		}
-		ApplyParagraphFormat(headerStart, headerEnd, false);
+		int tabStopPixels = 0;
+		if (!presentation.category.IsEmpty() && !presentation.status.IsEmpty()) {
+			CPoint lineStart = log.GetCharPos(headerStart);
+			CPoint categoryEnd = log.GetCharPos(categoryStart + presentation.category.GetLength());
+			tabStopPixels = categoryEnd.x - lineStart.x + MulDiv(10, dpiY, 96);
+		}
+		ApplyParagraphFormat(headerStart, headerEnd, false, tabStopPixels);
 		if (hasDetail) {
 			long detailStart = headerEnd + 2;
 			long detailEnd = detailStart + presentation.detail.GetLength();
@@ -6868,6 +6879,62 @@ void CmainDlg::OnSysCommand(UINT nID, LPARAM lParam)
 
 }
 
+namespace
+{
+	struct XmlContactField
+	{
+		LPCTSTR xmlName;
+		LPCTSTR fieldName;
+		CString Contact::*value;
+	};
+
+	const XmlContactField xmlContactFields[] = {
+		{ _T("name"), _T("name"), &Contact::name },
+		{ _T("number"), _T("number"), &Contact::number },
+		{ _T("firstname"), _T("firstname"), &Contact::firstname },
+		{ _T("lastname"), _T("lastname"), &Contact::lastname },
+		{ _T("phone"), _T("phone"), &Contact::phone },
+		{ _T("mobile"), _T("mobile"), &Contact::mobile },
+		{ _T("email"), _T("email"), &Contact::email },
+		{ _T("address"), _T("address"), &Contact::address },
+		{ _T("city"), _T("city"), &Contact::city },
+		{ _T("state"), _T("state"), &Contact::state },
+		{ _T("zip"), _T("zip"), &Contact::zip },
+		{ _T("comment"), _T("comment"), &Contact::comment },
+		{ _T("id"), _T("id"), &Contact::id },
+		{ _T("info"), _T("info"), &Contact::info }
+	};
+
+	void ReadContactAttributes(const DialToneXml::Element& element, ContactWithFields* contact)
+	{
+		for (size_t i = 0; i < _countof(xmlContactFields); ++i) {
+			const XmlContactField& field = xmlContactFields[i];
+			if (element.HasAttribute(field.xmlName)) {
+				contact->fields.AddTail(field.fieldName);
+				contact->contact.*(field.value) = element.GetAttribute(field.xmlName);
+			}
+		}
+		if (element.HasAttribute(_T("presence"))) {
+			contact->fields.AddTail(_T("presence"));
+			contact->contact.presence = element.GetAttribute(_T("presence")) == _T("1");
+		}
+		if (element.HasAttribute(_T("starred"))) {
+			contact->fields.AddTail(_T("starred"));
+			contact->contact.starred = element.GetAttribute(_T("starred")) == _T("1");
+		}
+	}
+
+	const DialToneXml::Element* FindChildEither(const DialToneXml::Element& parent,
+		LPCTSTR firstName, LPCTSTR secondName)
+	{
+		for (size_t i = 0; i < parent.children.size(); ++i) {
+			const DialToneXml::Element& child = parent.children[i];
+			if (child.name == firstName || child.name == secondName) return &child;
+		}
+		return NULL;
+	}
+}
+
 bool CmainDlg::GetCaptionMinimizeRect(CRect& rect) const
 {
 	rect.SetRectEmpty();
@@ -8137,178 +8204,101 @@ LRESULT CmainDlg::onUsersDirectoryLoaded(WPARAM wParam, LPARAM lParam)
 			else {
 				// XML
 				//PJ_LOG(3, (THIS_FILENAME, "XML foramt detected"));
-				CMarkup xml;
-				BOOL bResult = xml.SetDoc(MSIP::Utf8DecodeUni(response->body));
-				if (bResult) {
-					ok = true;
-					if (xml.FindElem(_T("contacts"))) {
-						if (xml.FindAttrib(_T("refresh"))) {
-							usersDirectoryRefresh = _wtoi(xml.GetAttrib(_T("refresh")));
-						}
-						if (xml.FindAttrib(_T("silent"))) {
-							usersDirectorySilent = _wtoi(xml.GetAttrib(_T("silent")));
-						}
-						while (xml.FindChildElem(_T("contact"))) {
-							xml.IntoElem();
-							contactWithFields = new ContactWithFields();
-							contactWithFields->contact.directory = true;
-							if (xml.FindAttrib(_T("name"))) {
-								contactWithFields->fields.AddTail(_T("name"));
-								contactWithFields->contact.name = xml.GetAttrib(_T("name"));
-							}
-							if (xml.FindAttrib(_T("number"))) {
-								contactWithFields->fields.AddTail(_T("number"));
-								contactWithFields->contact.number = xml.GetAttrib(_T("number"));
-							}
-							if (xml.FindAttrib(_T("firstname"))) {
-								contactWithFields->fields.AddTail(_T("firstname"));
-								contactWithFields->contact.firstname = xml.GetAttrib(_T("firstname"));
-							}
-							if (xml.FindAttrib(_T("lastname"))) {
-								contactWithFields->fields.AddTail(_T("lastname"));
-								contactWithFields->contact.lastname = xml.GetAttrib(_T("lastname"));
-							}
-							if (xml.FindAttrib(_T("phone"))) {
-								contactWithFields->fields.AddTail(_T("phone"));
-								contactWithFields->contact.phone = xml.GetAttrib(_T("phone"));
-							}
-							if (xml.FindAttrib(_T("mobile"))) {
-								contactWithFields->fields.AddTail(_T("mobile"));
-								contactWithFields->contact.mobile = xml.GetAttrib(_T("mobile"));
-							}
-							if (xml.FindAttrib(_T("email"))) {
-								contactWithFields->fields.AddTail(_T("email"));
-								contactWithFields->contact.email = xml.GetAttrib(_T("email"));
-							}
-							if (xml.FindAttrib(_T("address"))) {
-								contactWithFields->fields.AddTail(_T("address"));
-								contactWithFields->contact.address = xml.GetAttrib(_T("address"));
-							}
-							if (xml.FindAttrib(_T("city"))) {
-								contactWithFields->fields.AddTail(_T("city"));
-								contactWithFields->contact.city = xml.GetAttrib(_T("city"));
-							}
-							if (xml.FindAttrib(_T("state"))) {
-								contactWithFields->fields.AddTail(_T("state"));
-								contactWithFields->contact.state = xml.GetAttrib(_T("state"));
-							}
-							if (xml.FindAttrib(_T("zip"))) {
-								contactWithFields->fields.AddTail(_T("zip"));
-								contactWithFields->contact.zip = xml.GetAttrib(_T("zip"));
-							}
-							if (xml.FindAttrib(_T("comment"))) {
-								contactWithFields->fields.AddTail(_T("comment"));
-								contactWithFields->contact.comment = xml.GetAttrib(_T("comment"));
-							}
-							if (xml.FindAttrib(_T("id"))) {
-								contactWithFields->fields.AddTail(_T("id"));
-								contactWithFields->contact.id = xml.GetAttrib(_T("id"));
-							}
-							if (xml.FindAttrib(_T("info"))) {
-								contactWithFields->fields.AddTail(_T("info"));
-								contactWithFields->contact.info = xml.GetAttrib(_T("info"));
-							}
-							if (xml.FindAttrib(_T("presence"))) {
-								contactWithFields->fields.AddTail(_T("presence"));
-								CString rab = xml.GetAttrib(_T("presence"));
-								contactWithFields->contact.presence = rab == _T("1");
-							}
-							if (xml.FindAttrib(_T("starred"))) {
-								contactWithFields->fields.AddTail(_T("starred"));
-								CString rab = xml.GetAttrib(_T("starred"));
-								contactWithFields->contact.starred = rab == _T("1");
-							}
-							if (pageContacts->ContactPrepare(&contactWithFields->contact)) {
-								contacts.Add(contactWithFields);
-							}
-							else {
-								delete contactWithFields;
-							}
-							xml.OutOfElem();
-						}
-					}
-					else if (xml.FindElem(_T("YealinkIPPhoneBook"))) {
-						while (xml.FindChildElem(_T("Menu"))) {
-							xml.IntoElem();
-							while (xml.FindChildElem(_T("Unit"))) {
-								xml.IntoElem();
+					DialToneXml::Element xml;
+					if (DialToneXml::Parse(response->body, xml)) {
+						ok = true;
+						if (xml.name == _T("contacts")) {
+							if (xml.HasAttribute(_T("refresh"))) usersDirectoryRefresh = _wtoi(xml.GetAttribute(_T("refresh")));
+							if (xml.HasAttribute(_T("silent"))) usersDirectorySilent = _wtoi(xml.GetAttribute(_T("silent")));
+							for (size_t i = 0; i < xml.children.size(); ++i) {
+								const DialToneXml::Element& item = xml.children[i];
+								if (item.name != _T("contact")) continue;
 								contactWithFields = new ContactWithFields();
 								contactWithFields->contact.directory = true;
-								if (xml.FindAttrib(_T("Name"))) {
+								ReadContactAttributes(item, contactWithFields);
+								if (pageContacts->ContactPrepare(&contactWithFields->contact)) contacts.Add(contactWithFields);
+								else delete contactWithFields;
+							}
+						}
+						else if (xml.name == _T("YealinkIPPhoneBook")) {
+							for (size_t i = 0; i < xml.children.size(); ++i) {
+								const DialToneXml::Element& menu = xml.children[i];
+								if (menu.name != _T("Menu")) continue;
+								for (size_t j = 0; j < menu.children.size(); ++j) {
+									const DialToneXml::Element& unit = menu.children[j];
+									if (unit.name != _T("Unit")) continue;
+									contactWithFields = new ContactWithFields();
+									contactWithFields->contact.directory = true;
+									if (unit.HasAttribute(_T("Name"))) {
+										contactWithFields->fields.AddTail(_T("name"));
+										contactWithFields->contact.name = unit.GetAttribute(_T("Name"));
+									}
+									if (unit.HasAttribute(_T("Phone1"))) {
+										contactWithFields->fields.AddTail(_T("number"));
+										contactWithFields->contact.number = unit.GetAttribute(_T("Phone1"));
+									}
+									if (unit.HasAttribute(_T("Phone2"))) {
+										contactWithFields->fields.AddTail(_T("phone"));
+										contactWithFields->contact.phone = unit.GetAttribute(_T("Phone2"));
+									}
+									if (unit.HasAttribute(_T("Phone3"))) {
+										contactWithFields->fields.AddTail(_T("mobile"));
+										contactWithFields->contact.mobile = unit.GetAttribute(_T("Phone3"));
+									}
+									if (pageContacts->ContactPrepare(&contactWithFields->contact)) contacts.Add(contactWithFields);
+									else delete contactWithFields;
+								}
+							}
+						}
+						else {
+							for (size_t i = 0; i < xml.children.size(); ++i) {
+								const DialToneXml::Element& entry = xml.children[i];
+								if (entry.name != _T("entry") && entry.name != _T("DirectoryEntry")) continue;
+								contactWithFields = new ContactWithFields();
+								contactWithFields->contact.directory = true;
+								int telephoneIndex = 0;
+								for (size_t j = 0; j < entry.children.size() && telephoneIndex < 3; ++j) {
+									const DialToneXml::Element& child = entry.children[j];
+									if (child.name != _T("extension") && child.name != _T("Telephone")) continue;
+									if (telephoneIndex == 0) {
+										contactWithFields->fields.AddTail(_T("number"));
+										contactWithFields->contact.number = child.text;
+									}
+									else if (telephoneIndex == 1) {
+										contactWithFields->fields.AddTail(_T("phone"));
+										contactWithFields->contact.phone = child.text;
+									}
+									else {
+										contactWithFields->fields.AddTail(_T("mobile"));
+										contactWithFields->contact.mobile = child.text;
+									}
+									++telephoneIndex;
+								}
+								const DialToneXml::Element* child = FindChildEither(entry, _T("name"), _T("Name"));
+								if (child) {
 									contactWithFields->fields.AddTail(_T("name"));
-									contactWithFields->contact.name = xml.GetAttrib(_T("Name"));
+									contactWithFields->contact.name = child->text;
 								}
-								if (xml.FindAttrib(_T("Phone1"))) {
-									contactWithFields->fields.AddTail(_T("number"));
-									contactWithFields->contact.number = xml.GetAttrib(_T("Phone1"));
+								child = entry.FindChild(_T("info"));
+								if (child) {
+									contactWithFields->fields.AddTail(_T("info"));
+									contactWithFields->contact.info = child->text;
 								}
-								if (xml.FindAttrib(_T("Phone2"))) {
-									contactWithFields->fields.AddTail(_T("phone"));
-									contactWithFields->contact.phone = xml.GetAttrib(_T("Phone2"));
+								child = entry.FindChild(_T("presence"));
+								if (child) {
+									contactWithFields->fields.AddTail(_T("presence"));
+									contactWithFields->contact.presence = child->text == _T("1");
 								}
-								if (xml.FindAttrib(_T("Phone3"))) {
-									contactWithFields->fields.AddTail(_T("mobile"));
-									contactWithFields->contact.mobile = xml.GetAttrib(_T("Phone3"));
+								child = entry.FindChild(_T("starred"));
+								if (child) {
+									contactWithFields->fields.AddTail(_T("starred"));
+									contactWithFields->contact.starred = child->text == _T("1");
 								}
-								if (pageContacts->ContactPrepare(&contactWithFields->contact)) {
-									contacts.Add(contactWithFields);
-								}
-								else {
-									delete contactWithFields;
-								}
-								xml.OutOfElem();
+								if (pageContacts->ContactPrepare(&contactWithFields->contact)) contacts.Add(contactWithFields);
+								else delete contactWithFields;
 							}
-							xml.OutOfElem();
 						}
 					}
-					else {
-						while (xml.FindChildElem(_T("entry")) || xml.FindChildElem(_T("DirectoryEntry"))) {
-							xml.IntoElem();
-							contactWithFields = new ContactWithFields();
-							contactWithFields->contact.directory = true;
-							if (xml.FindChildElem(_T("extension")) || xml.FindChildElem(_T("Telephone"))) {
-								contactWithFields->fields.AddTail(_T("number"));
-								contactWithFields->contact.number = xml.GetChildData();
-								if (xml.FindChildElem(_T("extension")) || xml.FindChildElem(_T("Telephone"))) {
-									contactWithFields->fields.AddTail(_T("phone"));
-									contactWithFields->contact.phone = xml.GetChildData();
-								}
-								if (xml.FindChildElem(_T("extension")) || xml.FindChildElem(_T("Telephone"))) {
-									contactWithFields->fields.AddTail(_T("mobile"));
-									contactWithFields->contact.mobile = xml.GetChildData();
-								}
-								xml.ResetChildPos();
-							}
-							if (xml.FindChildElem(_T("name")) || xml.FindChildElem(_T("Name"))) {
-								contactWithFields->fields.AddTail(_T("name"));
-								contactWithFields->contact.name = xml.GetChildData();
-								xml.ResetChildPos();
-							}
-							if (xml.FindChildElem(_T("info"))) {
-								contactWithFields->fields.AddTail(_T("info"));
-								contactWithFields->contact.info = xml.GetChildData();
-								xml.ResetChildPos();
-							}
-							if (xml.FindChildElem(_T("presence"))) {
-								contactWithFields->fields.AddTail(_T("presence"));
-								contactWithFields->contact.presence = xml.GetChildData() == _T("1");
-								xml.ResetChildPos();
-							}
-							if (xml.FindChildElem(_T("starred"))) {
-								contactWithFields->fields.AddTail(_T("starred"));
-								contactWithFields->contact.starred = xml.GetChildData() == _T("1");
-								xml.ResetChildPos();
-							}
-							if (pageContacts->ContactPrepare(&contactWithFields->contact)) {
-								contacts.Add(contactWithFields);
-							}
-							else {
-								delete contactWithFields;
-							}
-							xml.OutOfElem();
-						}
-					}
-				}
 			}
 		}
 		bool sort = false;

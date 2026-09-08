@@ -73,6 +73,7 @@ public:
 	bool Import(CString filename, CArray<ContactWithFields*> &contacts, bool directory = false);
 
 private:
+	bool contactsXmlLoadFailed;
 	void ContactDecode(CString str, Contact &contact);
 	void MessageDlgOpen(BOOL isCall = FALSE, BOOL hasVideo = FALSE, BYTE index = 0);
 	void DefaultItemAction(int i);
