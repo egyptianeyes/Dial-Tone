@@ -159,7 +159,7 @@ namespace DialToneXml
 				stack.pop_back();
 			}
 			else if (type == XmlNodeType_Text || type == XmlNodeType_CDATA
-				|| type == XmlNodeType_Whitespace || type == XmlNodeType_SignificantWhitespace) {
+				|| type == XmlNodeType_Whitespace) {
 				if (!stack.empty()) {
 					const WCHAR* value = NULL;
 					if (FAILED(reader->GetValue(&value, NULL)) || !value) {
