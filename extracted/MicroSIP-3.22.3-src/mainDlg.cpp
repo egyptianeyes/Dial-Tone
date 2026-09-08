@@ -345,10 +345,8 @@ protected:
 			graphics.DrawImage(image, Gdiplus::Rect(left, top, width, height));
 		}
 
-		COLORREF secondaryColor = DarkPalette::SecondaryText(accountSettings.darkMode);
-		COLORREF linkColor = DarkPalette::Link(accountSettings.darkMode);
-		Gdiplus::SolidBrush textBrush(Gdiplus::Color(255, GetRValue(secondaryColor), GetGValue(secondaryColor), GetBValue(secondaryColor)));
-		Gdiplus::SolidBrush linkBrush(Gdiplus::Color(255, GetRValue(linkColor), GetGValue(linkColor), GetBValue(linkColor)));
+		Gdiplus::SolidBrush textBrush(accountSettings.darkMode ? Gdiplus::Color(255, 190, 196, 202) : Gdiplus::Color(255, 100, 100, 100));
+		Gdiplus::SolidBrush linkBrush(Gdiplus::Color(255, 40, 90, 150));
 		Gdiplus::RectF measured;
 		const WCHAR* prefix = L"Powered by ";
 		const WCHAR* link = L"MicroSIP";
@@ -1015,8 +1013,8 @@ private:
 		if (m_scrollTarget.y != GetScrollPosition().y) SetTimer(IDT_CALL_TRACE_SCROLL, CALL_TRACE_SCROLL_FRAME_MS, NULL);
 	}
 
-	COLORREF EventColor() const { return darkMode ? DarkPalette::Text() : GetSysColor(COLOR_WINDOWTEXT); }
-	COLORREF SecondaryColor() const { return DarkPalette::SecondaryText(darkMode); }
+	COLORREF EventColor() const { return darkMode ? DarkPalette::Text() : RGB(0, 0, 0); }
+	COLORREF TimestampColor() const { return darkMode ? DarkPalette::SecondaryText() : RGB(0, 0, 0); }
 
 	enum TraceTone { ToneNormal, ToneSuccess, ToneProgress, ToneWarning, ToneError };
 
@@ -1027,15 +1025,19 @@ private:
 		TraceTone tone = ToneNormal;
 	};
 
-	COLORREF CategoryColor() const { return SecondaryColor(); }
+	COLORREF CategoryColor() const { return darkMode ? RGB(145, 165, 182) : RGB(0, 0, 0); }
+	COLORREF SuccessColor() const { return darkMode ? RGB(92, 190, 120) : RGB(0, 0, 0); }
+	COLORREF ProgressColor() const { return darkMode ? RGB(80, 190, 220) : RGB(0, 0, 0); }
+	COLORREF WarningColor() const { return darkMode ? RGB(225, 170, 75) : RGB(0, 0, 0); }
+	COLORREF ErrorColor() const { return darkMode ? RGB(235, 105, 105) : RGB(0, 0, 0); }
 
 	COLORREF ToneColor(TraceTone tone) const
 	{
 		switch (tone) {
-		case ToneSuccess: return DarkPalette::SemanticSuccess(darkMode);
-		case ToneProgress: return DarkPalette::SemanticProgress(darkMode);
-		case ToneWarning: return DarkPalette::SemanticWarning(darkMode);
-		case ToneError: return DarkPalette::SemanticError(darkMode);
+		case ToneSuccess: return SuccessColor();
+		case ToneProgress: return ProgressColor();
+		case ToneWarning: return WarningColor();
+		case ToneError: return ErrorColor();
 		default: return EventColor();
 		}
 	}
@@ -1218,7 +1220,7 @@ private:
 		long headerStart = start + (prependBreak ? 2 : 0);
 		long headerEnd = headerStart + header.GetLength();
 		ApplyCharacterFormat(headerStart, headerEnd, EventColor());
-		if (!timestamp.IsEmpty()) ApplyCharacterFormat(headerStart, headerStart + timestamp.GetLength(), SecondaryColor(), false, 9);
+		if (!timestamp.IsEmpty()) ApplyCharacterFormat(headerStart, headerStart + timestamp.GetLength(), TimestampColor(), false, 9);
 		long categoryStart = headerStart + (timestamp.IsEmpty() ? 0 : timestamp.GetLength() + 2);
 		if (!presentation.category.IsEmpty()) {
 			ApplyCharacterFormat(categoryStart, categoryStart + presentation.category.GetLength(), CategoryColor(), true);
@@ -1237,7 +1239,7 @@ private:
 		if (hasDetail) {
 			long detailStart = headerEnd + 2;
 			long detailEnd = detailStart + presentation.detail.GetLength();
-			ApplyCharacterFormat(detailStart, detailEnd, SecondaryColor());
+			ApplyCharacterFormat(detailStart, detailEnd, EventColor());
 			ApplyParagraphFormat(detailStart, detailEnd, true);
 		}
 		log.SetSel(log.GetWindowTextLength(), log.GetWindowTextLength());
@@ -6984,17 +6986,14 @@ void CmainDlg::RedrawCaptionMinimize()
 
 void CmainDlg::OnNcPaint()
 {
-	// DWMWA_ALLOW_NCPAINT exposes application rendering in the DWM frame. Do not
-	// invoke DefWindowProc here: it would paint a second, legacy frame and border.
+	CBaseDialog::OnNcPaint();
 	DrawCaptionMinimize();
 }
 
 BOOL CmainDlg::OnNcActivate(BOOL active)
 {
 	m_captionActive = active != FALSE;
-	// Record the activation change without asking DefWindowProc to repaint the
-	// whole non-client area; DWM owns the native caption, title and close button.
-	BOOL result = (BOOL)DefWindowProc(WM_NCACTIVATE, active, -1);
+	BOOL result = CBaseDialog::OnNcActivate(active);
 	DrawCaptionMinimize();
 	return result;
 }
