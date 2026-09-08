@@ -660,9 +660,9 @@ BOOL Dialer::OnInitDialog()
 	GetDlgItem(IDC_REDIAL)->SetFont(&m_font_call);
 	GetDlgItem(IDC_DELETE)->SetFont(&m_font);
 
-	m_ButtonCall.m_FaceColor = _GLOBAL_DIALER_CALL_COLOR;
+	m_ButtonCall.m_FaceColor = DarkPalette::Accent(accountSettings.darkMode);
 	m_ButtonCall.m_TextColor = RGB(255, 255, 255);
-	m_ButtonDialTone.m_FaceColor = _GLOBAL_DIALER_CALL_COLOR;
+	m_ButtonDialTone.m_FaceColor = DarkPalette::Accent(accountSettings.darkMode);
 	m_ButtonDialTone.m_TextColor = RGB(255, 255, 255);
 	m_ButtonEnd.m_FaceColor = _GLOBAL_DIALER_END_COLOR;
 	m_ButtonEnd.m_TextColor = RGB(255, 255, 255);
@@ -988,10 +988,10 @@ void Dialer::UpdateAccountIdentity()
 
 void Dialer::SetDarkMode(bool enabled)
 {
-	m_ButtonCall.m_FaceColor = enabled ? DarkPalette::Surface() : _GLOBAL_DIALER_CALL_COLOR;
+	m_ButtonCall.m_FaceColor = DarkPalette::Accent(enabled);
 	m_ButtonCall.m_TextColor = RGB(255, 255, 255);
 	m_ButtonDialTone.m_FaceColor = m_dialToneSessionActive ? _GLOBAL_DIALER_END_COLOR
-		: (enabled ? DarkPalette::Surface() : _GLOBAL_DIALER_CALL_COLOR);
+		: DarkPalette::Accent(enabled);
 	m_ButtonDialTone.m_TextColor = RGB(255, 255, 255);
 	m_ButtonEnd.m_FaceColor = enabled ? DarkPalette::Surface() : _GLOBAL_DIALER_END_COLOR;
 	m_ButtonEnd.m_TextColor = RGB(255, 255, 255);
@@ -1577,7 +1577,7 @@ void Dialer::SetDialToneSessionActive(bool active)
 	m_dialToneSessionActive = active;
 	m_ButtonDialTone.SetWindowText(Translate(active ? _T("Hang-Up") : _T("Dial-Tone")));
 	m_ButtonDialTone.m_FaceColor = active ? _GLOBAL_DIALER_END_COLOR
-		: (accountSettings.darkMode ? DarkPalette::Surface() : _GLOBAL_DIALER_CALL_COLOR);
+		: DarkPalette::Accent(accountSettings.darkMode);
 	UpdateCallButton();
 	m_ButtonDialTone.RedrawWindow(NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 }
