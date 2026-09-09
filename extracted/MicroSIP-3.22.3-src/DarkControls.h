@@ -50,12 +50,14 @@ public:
 	CPlaceholderEdit();
 	void SetPlaceholder(LPCTSTR text);
 	void SetPlaceholderFontPointReduction(int points);
+	void SetPlaceholderAlignment(UINT alignment);
 	void SetDarkMode(bool enabled);
 
 protected:
 	CString m_placeholder;
 	CFont m_placeholderFont;
 	int m_placeholderFontPointReduction;
+	UINT m_placeholderAlignment;
 	bool m_darkMode;
 	bool m_wasEmpty;
 

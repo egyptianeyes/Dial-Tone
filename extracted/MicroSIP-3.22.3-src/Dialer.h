@@ -38,6 +38,7 @@ class Dialer :
 {
 	class CAccountSidecar;
 	CFont m_font;
+	CFont m_font_star;
 	CFont m_font_number;
 	CFont m_font_balance;
 	CFont m_font_call;

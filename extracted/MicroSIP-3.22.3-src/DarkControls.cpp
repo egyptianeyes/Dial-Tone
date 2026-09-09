@@ -246,6 +246,7 @@ CPlaceholderEdit::CPlaceholderEdit()
 	m_darkMode = false;
 	m_wasEmpty = true;
 	m_placeholderFontPointReduction = 0;
+	m_placeholderAlignment = DT_LEFT | DT_TOP;
 }
 
 void CPlaceholderEdit::SetPlaceholder(LPCTSTR text)
@@ -272,6 +273,12 @@ void CPlaceholderEdit::SetPlaceholderFontPointReduction(int points)
 			m_placeholderFont.CreateFontIndirect(&lf);
 		}
 	}
+	if (::IsWindow(m_hWnd)) Invalidate();
+}
+
+void CPlaceholderEdit::SetPlaceholderAlignment(UINT alignment)
+{
+	m_placeholderAlignment = alignment;
 	if (::IsWindow(m_hWnd)) Invalidate();
 }
 
@@ -307,7 +314,7 @@ void CPlaceholderEdit::OnPaint()
 	CFont* oldFont = font ? dc.SelectObject(font) : NULL;
 	int oldBkMode = dc.SetBkMode(TRANSPARENT);
 	COLORREF oldColor = dc.SetTextColor(m_darkMode ? DarkPalette::SecondaryText() : GetSysColor(COLOR_GRAYTEXT));
-	dc.DrawText(m_placeholder, rect, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX);
+	dc.DrawText(m_placeholder, rect, m_placeholderAlignment | DT_SINGLELINE | DT_NOPREFIX);
 	dc.SetTextColor(oldColor);
 	dc.SetBkMode(oldBkMode);
 	if (oldFont) {

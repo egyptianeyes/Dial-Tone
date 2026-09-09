@@ -637,6 +637,9 @@ BOOL Dialer::OnInitDialog()
 	//--
 	lf.lfHeight = -MulDiv(19, dpiY, 96);
 	m_font.CreateFontIndirect(&lf);
+	lf.lfHeight = -MulDiv(24, dpiY, 96);
+	m_font_star.CreateFontIndirect(&lf);
+	lf.lfHeight = -MulDiv(19, dpiY, 96);
 	//--
 	m_font_number.CreateFontIndirect(&lf);
 	//--
@@ -653,7 +656,7 @@ BOOL Dialer::OnInitDialog()
 	GetDlgItem(IDC_KEY_8)->SetFont(&m_font);
 	GetDlgItem(IDC_KEY_9)->SetFont(&m_font);
 	GetDlgItem(IDC_KEY_0)->SetFont(&m_font);
-	GetDlgItem(IDC_KEY_STAR)->SetFont(&m_font);
+	GetDlgItem(IDC_KEY_STAR)->SetFont(&m_font_star);
 	GetDlgItem(IDC_KEY_GRATE)->SetFont(&m_font);
 	GetDlgItem(IDC_KEY_PLUS)->SetFont(&m_font);
 	GetDlgItem(IDC_CLEAR)->SetFont(&m_font_call);
@@ -912,6 +915,7 @@ void Dialer::RebuildButtons(bool init)
 		m_CfwDestination.SetFont(GetFont());
 		m_CfwDestination.SetPlaceholder(_T("Forward Destination"));
 		m_CfwDestination.SetPlaceholderFontPointReduction(1);
+		m_CfwDestination.SetPlaceholderAlignment(DT_CENTER | DT_VCENTER);
 		m_cfwCommittedDestination = accountSettings.forwardingNumber;
 		m_cfwEditing = false;
 		m_CfwDestination.SetWindowText(accountSettings.forwardingNumber);

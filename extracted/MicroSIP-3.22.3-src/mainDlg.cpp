@@ -3711,7 +3711,9 @@ BOOL CmainDlg::OnInitDialog()
 	GetWindowRect(&rect);
 	int previousPhoneWindowWidth = accountSettings.mainW > 0 ? accountSettings.mainW : rect.Width();
 	int phoneWindowWidth = MulDiv(previousPhoneWindowWidth, 5, 4);
-	int viewWidthAdd = widthAdd + phoneWindowWidth - rect.Width();
+	// OnCreate has already included widthAdd in rect.Width(). Only apply the
+	// remaining change to controls anchored to the original resource width.
+	int viewWidthAdd = phoneWindowWidth - rect.Width();
 
 	int mx;
 	int my;
@@ -7071,7 +7073,7 @@ void CmainDlg::OnGetMinMaxInfo(MINMAXINFO* lpMMI)
 	}
 	lpMMI->ptMinTrackSize.x = m_lockedWindowWidth;
 	lpMMI->ptMaxTrackSize.x = m_lockedWindowWidth;
-	if (m_appBarRegistered) {
+	if (m_appBarRegistered && !m_appBarPositioning) {
 		// While docked our own reservation is inside rcWork, so hold the current height instead.
 		CRect current;
 		GetWindowRect(&current);
